@@ -2,11 +2,11 @@
 const testimonials = [
     {
       quote: "J'ai découvert des branches de ma famille que je ne connaissais pas !",
-      author: "Marie D., Paris"
+      author: "Marie Douma., Dschang"
     },
     {
       quote: "L'outil le plus simple pour partager notre histoire avec nos enfants.",
-      author: "Jean P., Montréal"
+      author: "Jean Paul ., Yaoundé"
     },
     {
       quote: "Enfin une plateforme qui respecte la confidentialité des données familiales.",
