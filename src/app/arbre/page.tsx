@@ -54,7 +54,7 @@ export default function SignupPage() {
                   type="text"
                   id="treeName"
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-3 px-4 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Ex: Famille Dupont"
+                  placeholder="Ex: Famille Amveyiab"
                   value={treeName}
                   onChange={(e) => setTreeName(e.target.value)}
                 />
@@ -112,7 +112,7 @@ export default function SignupPage() {
                       type="text"
                       id="birthPlace"
                       className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-3 px-4 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ex: Paris, France"
+                      placeholder="Ex: Dschang, Cameroun"
                     />
                   </div>
                 </div>
