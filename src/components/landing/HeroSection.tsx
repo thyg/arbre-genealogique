@@ -111,7 +111,7 @@
                 </Link>
                 <Link
                   href="#features"
-                  className="border-2 border-white px-8 py-4 rounded-lg font-semibold text-center hover:bg-white hover:bg-opacity-10 transition flex items-center justify-center"
+                  className="border-2 border-white px-8 py-4 rounded-lg font-semibold text-center hover:bg hover:bg-opacity-10 transition flex items-center justify-center"
                 >
                   Découvrir les fonctionnalités
                 </Link>

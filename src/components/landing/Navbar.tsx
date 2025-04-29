@@ -49,13 +49,20 @@ export default function Navbar() {
 
           {/* Auth Buttons - Desktop */}
           <div className="hidden md:flex items-center space-x-4">
-            <Link href="/login" className="flex items-center space-x-1 text-gray-700 hover:text-blue-500">
+            <Link href="/authentification/login" className="flex items-center space-x-1 text-gray-700 hover:text-blue-500">
               <FaSignInAlt />
               <span>Connexion</span>
             </Link>
-            <Link href="/signup" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 transition">
+            <Link href="/authentification/signup" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 transition">
               <FaUserPlus />
               <span>S'inscrire</span>
+            </Link>
+            <Link
+              href="/collaboration/invitation"
+              className="block text-center py-2 bg-blue-700 text-white rounded-lg"
+              onClick={() => setIsOpen(false)}
+            >
+              Invitation
             </Link>
           </div>
 
@@ -91,12 +98,13 @@ export default function Navbar() {
                   Connexion
                 </Link>
                 <Link
-                  href="/signup"
+                  href="/authentification/"
                   className="block text-center py-2 bg-blue-600 text-white rounded-lg"
                   onClick={() => setIsOpen(false)}
                 >
                   S'inscrire
                 </Link>
+                
               </div>
             </nav>
           </div>

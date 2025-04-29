@@ -4,6 +4,8 @@ import TreeSidebar from './TreeSidebar';
 import TreeGraph from './TreeGraph';
 import { FaSearch } from 'react-icons/fa';
 
+import Link from "next/link";
+
 export default function TreeLayout() {
   const [userData, setUserData] = useState({
     treeName: '',
@@ -41,6 +43,7 @@ export default function TreeLayout() {
     });
   }, []);
 
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header userData={userData} />
@@ -60,6 +63,9 @@ export default function TreeLayout() {
 }
 
 function Header({ userData }) {
+  
+  const [open, setOpen] = useState(false);
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
@@ -82,11 +88,71 @@ function Header({ userData }) {
                 <path fillRule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
               </svg>
             </button>
-            <button className="p-2 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors duration-200">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+            <button
+              onClick={() => setOpen(!open)}
+              className="p-2 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors duration-200"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                  clipRule="evenodd"
+                />
               </svg>
             </button>
+
+            {/* Menu déroulant positionné sous le bouton */}
+            {open && (
+              <div className="absolute right-5 mt-80 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-30">
+                <ul className="py-1">
+                <li>
+                  <Link
+                    href="/authentification/dashboard"
+                    className="block px-4 py-2 hover:bg-gray-100 text-gray-700"
+                  >
+                    Tableau de bord
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/authentification/profil"
+                    className="block px-4 py-2 hover:bg-gray-100 text-gray-700"
+                  >
+                    Profil
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/collaboration/historique_modifications"
+                    className="block px-4 py-2 hover:bg-gray-100 text-gray-700"
+                  >
+                    Historique des modifications
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/collaboration/gestion_permissions"
+                    className="block px-4 py-2 hover:bg-gray-100 text-gray-700"
+                  >
+                    Gestion des permissions
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/collaboration/notifications"
+                    className="block px-4 py-2 hover:bg-gray-100 text-gray-700"
+                  >
+                    Notifications
+                  </Link>
+                </li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>
