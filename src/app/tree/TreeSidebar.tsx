@@ -3,7 +3,7 @@ import { FaUser, FaPlus, FaEdit, FaEllipsisH, FaCamera, FaArrowLeft } from 'reac
 import { useState } from 'react';
 import React from 'react';
 
-export default function TreeSidebar({ userData, updateUserData }) {
+export default function TreeSidebar({ userData, updateUserData, onEditClick }) {
   const [view, setView] = useState('default'); // 'default' ou 'profile'
   const [tempImage, setTempImage] = useState(null);
 
@@ -25,6 +25,13 @@ export default function TreeSidebar({ userData, updateUserData }) {
 
   const handleBackClick = () => {
     setView('default');
+  };
+
+  const handleEditClick = () => {
+    // Appel de la fonction pour ouvrir le formulaire d'édition
+    if (onEditClick) {
+      onEditClick();
+    }
   };
 
   return (
@@ -61,6 +68,14 @@ export default function TreeSidebar({ userData, updateUserData }) {
               
               <h2 className="text-xl font-bold text-gray-900 text-center">{userData.userName}</h2>
               <p className="text-sm text-gray-500 text-center">{userData.treeName}</p>
+              
+              {/* Ajout du bouton Modifier */}
+              <button 
+                onClick={handleEditClick}
+                className="mt-2 px-4 py-2 flex items-center text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <FaEdit className="mr-2" /> Modifier le profil
+              </button>
             </div>
           </div>
 
@@ -138,7 +153,10 @@ export default function TreeSidebar({ userData, updateUserData }) {
                 <span className="text-xs text-gray-600">Profil</span>
               </button>
               
-              <button className="flex flex-col items-center w-full p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+              <button 
+                onClick={handleEditClick}
+                className="flex flex-col items-center w-full p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+              >
                 <div className="h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 mb-1">
                   <FaEdit className="h-3.5 w-3.5" />
                 </div>

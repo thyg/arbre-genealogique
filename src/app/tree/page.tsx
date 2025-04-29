@@ -22,6 +22,69 @@ export default function TreeLayout() {
       if (value !== null) localStorage.setItem(key, value);
     });
   };
+  const [isEditing, setIsEditing] = useState(false);
+  
+    // État temporaire pour stocker les modifications avant enregistrement
+  const [editForm, setEditForm] = useState({...userData});
+  // Fonction pour mettre à jour les données utilisateur
+  // const updateUserData = (newData) => {
+  //   setUserData(prevData => ({
+  //     ...prevData,
+  //     ...newData
+  //   }));
+  // };
+
+  // Gestion de la modification des champs du formulaire
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setEditForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+    // Gestion du changement d'image de profil dans le formulaire d'édition
+    const handleImageChange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setEditForm(prev => ({
+            ...prev,
+            profileImage: event.target.result
+          }));
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
+     // Ouvrir le formulaire d'édition
+  const handleEditClick = () => {
+    setEditForm({...userData}); // Copier les données utilisateur actuelles dans le formulaire
+    setIsEditing(true);
+  };
+
+  // Annuler les modifications
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+  };
+
+  // Enregistrer les modifications
+  const handleSaveEdit = () => {
+    updateUserData(editForm);
+    setIsEditing(false);
+  };
+
+
+
+
+
+
+
+
+
+
+
 
   useEffect(() => {
     const storedTreeName = localStorage.getItem('treeName');
@@ -33,9 +96,9 @@ export default function TreeLayout() {
     
     updateUserData({
       treeName: storedTreeName || 'Famille Wotchoko',
-      userName: storedUserName || 'Yohan Wotchoko',
+      userName: storedUserName || 'Yohan Alex Wotchoko',
       gender: storedGender || 'masculin',
-      birthDate: storedBirthDate || '2004',
+      birthDate: storedBirthDate || '2001',
       birthPlace: storedBirthPlace || '',
       profileImage: storedProfileImage || null
     });
@@ -49,6 +112,7 @@ export default function TreeLayout() {
         <TreeSidebar 
           userData={userData} 
           updateUserData={updateUserData} 
+          onEditClick={handleEditClick}
         />
         <TreeGraph 
           userData={userData} 
