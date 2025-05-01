@@ -41,6 +41,8 @@ export default function InvitationPage() {
               required
             />
             <button 
+
+            
               type="submit"
               className="w-full py-3 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg transition duration-200"
             >
