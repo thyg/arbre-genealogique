@@ -1,50 +1,452 @@
 'use client';
-import { FaUser, FaPlus, FaEdit, FaMinus, FaTimes } from 'react-icons/fa';
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import * as d3 from 'd3';
+import { FaUser, FaPlus, FaEdit, FaArrowsAlt, FaLink } from 'react-icons/fa';
 import ProfileEditForm from './ProfileEditForm';
+import FamilyLinkForm from './FamilyLinkForm';
 
 export default function TreeGraph({ userData, updateUserData }) {
+  const svgRef = useRef();
+  const tooltipRef = useRef();
+  const [selectedNode, setSelectedNode] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const [selectedRelation, setSelectedRelation] = useState(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [familyMembers, setFamilyMembers] = useState({
-    father: null,
-    mother: null,
-    siblings: [],
-    children: [],
-    spouse: null
-  });
-  const [newMember, setNewMember] = useState({
-    id: '',
-    profileImage: '',
-    userName: '',
-    gender: '',
-    birthDate: '',
-    birthPlace: '',
-    relation: ''
-  });
-  const [zoomLevel, setZoomLevel] = useState(1);
-  
-  const [editForm, setEditForm] = useState({
-    profileImage: userData.profileImage,
-    userName: userData.userName,
-    treeName: userData.treeName,
-    gender: userData.gender,
-    birthDate: userData.birthDate,
-    birthPlace: userData.birthPlace
+  const [isCreatingLink, setIsCreatingLink] = useState(false);
+  const [editForm, setEditForm] = useState({ ...userData });
+  const [familyData, setFamilyData] = useState(null);
+  const [peopleDatabase, setPeopleDatabase] = useState({});
+  const [linkFormData, setLinkFormData] = useState({
+    sourceId: '',
+    sourceName: '',
+    targetName: '',
+    targetGender: 'male',
+    targetBirthDate: '',
+    targetBirthPlace: '',
+    relationshipType: 'child'
   });
 
-  // Load any existing family members on component mount
+  // Initialize the family structure with the current user
   useEffect(() => {
-    if (userData.familyMembers) {
-      setFamilyMembers(userData.familyMembers);
-    }
+    // Initial root user setup
+    const initialData = {
+      id: '1',
+      name: userData.userName || 'Utilisateur',
+      gender: userData.gender || 'male',
+      birthDate: userData.birthDate || '',
+      birthPlace: userData.birthPlace || '',
+      profileImage: userData.profileImage || '',
+      type: 'self',
+      parents: [],
+      children: [],
+      partners: []
+    };
+
+    setFamilyData(initialData);
+    setSelectedNode(initialData);
+    
+    // Add to database
+    setPeopleDatabase({
+      '1': initialData
+    });
   }, [userData]);
 
+  // Redraw the tree whenever the data changes
+  useEffect(() => {
+    if (familyData && svgRef.current) {
+      drawFamilyTree();
+    }
+  }, [familyData, selectedNode, peopleDatabase]);
+
+  // Convert our family data structure to a hierarchical structure for d3
+  const createHierarchicalData = () => {
+    const processedNodes = new Set();
+    
+    // Process a person for hierarchy view, without recursion
+    const processPerson = (personId) => {
+      if (!personId || processedNodes.has(personId)) return null;
+      
+      const person = peopleDatabase[personId];
+      if (!person) return null;
+      
+      // Add to processed set to prevent infinite recursion
+      processedNodes.add(personId);
+      
+      const result = { ...person };
+      const hierarchicalChildren = [];
+      
+      // Add partners on same level
+      for (const partnerId of result.partners || []) {
+        const partner = peopleDatabase[partnerId];
+        if (partner) {
+          hierarchicalChildren.push({ 
+            ...partner, 
+            relationship: 'partner',
+            hierarchicalChildren: [] 
+          });
+        }
+      }
+      
+      // Add children below
+      for (const childId of result.children || []) {
+        const child = peopleDatabase[childId];
+        if (child) {
+          hierarchicalChildren.push({ 
+            ...child, 
+            relationship: 'child',
+            hierarchicalChildren: [] 
+          });
+        }
+      }
+      
+      // If main person, add parents above
+      if (result.type === 'self' || !result.relationship) {
+        for (const parentId of result.parents || []) {
+          const parent = peopleDatabase[parentId];
+          if (parent) {
+            const parentCopy = { 
+              ...parent, 
+              relationship: 'parent',
+              hierarchicalChildren: []
+            };
+            
+            // Add grandparents (but limit to one level to avoid recursion)
+            for (const grandparentId of parent.parents || []) {
+              const grandparent = peopleDatabase[grandparentId];
+              if (grandparent) {
+                parentCopy.hierarchicalChildren.push({
+                  ...grandparent,
+                  relationship: 'grandparent',
+                  hierarchicalChildren: []
+                });
+              }
+            }
+            
+            hierarchicalChildren.push(parentCopy);
+          }
+        }
+      }
+      
+      if (hierarchicalChildren.length > 0) {
+        result.hierarchicalChildren = hierarchicalChildren;
+      }
+      
+      return result;
+    };
+    
+    // Start from the family data root
+    return processPerson('1');
+  };
+
+  const drawFamilyTree = () => {
+    if (!familyData) return;
+
+    const svg = d3.select(svgRef.current);
+    const tooltip = d3.select(tooltipRef.current);
+    svg.selectAll('*').remove();
+
+    const width = svgRef.current.clientWidth;
+    const height = svgRef.current.clientHeight;
+    const margin = { top: 80, right: 120, bottom: 80, left: 120 };
+    const nodeWidth = 180;
+    const nodeHeight = 80;
+    
+    // Create the hierarchical data for d3
+    const hierarchicalData = createHierarchicalData();
+    if (!hierarchicalData) return;
+    
+    const root = d3.hierarchy(hierarchicalData, d => d.hierarchicalChildren);
+    
+    // Create a custom tree layout
+    const treeLayout = d3.tree()
+      .nodeSize([nodeWidth, nodeHeight])
+      .separation((a, b) => {
+        // Adjust separation based on relationship
+        if (a.data.relationship === 'partner' && b.data.relationship === 'partner') {
+          return 1.2; // Partners closer together
+        } else if (a.data.relationship === 'parent' && b.data.relationship === 'parent') {
+          return 1.5; // Parents spaced out
+        } else {
+          return 2; // Default separation
+        }
+      });
+    
+    // Apply the layout to our data
+    const treeData = treeLayout(root);
+    
+    // Adjust positions based on relationships
+    treeData.descendants().forEach(d => {
+      // Adjust y-position based on generation/relationship
+      if (d.data.relationship === 'parent' || d.data.relationship === 'grandparent') {
+        d.y = d.y - 100; // Move parents up
+      } else if (d.data.relationship === 'partner') {
+        d.y = d.parent.y; // Keep partners on same level as parent
+      } else if (d.data.relationship === 'child') {
+        d.y = d.y + 50; // Move children down
+      }
+    });
+    
+    // Create zoom behavior
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 3])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      });
+    
+    svg.call(zoom);
+    
+    // Create main group for all elements with initial transform
+    const g = svg.append('g')
+      .attr('transform', `translate(${margin.left + width/4},${margin.top})`);
+    
+    // Draw links between nodes
+    g.selectAll('.link')
+      .data(treeData.links())
+      .enter()
+      .append('path')
+      .attr('class', 'link')
+      .attr('d', d => {
+        // Create different link paths based on relationship
+        if (d.target.data.relationship === 'partner') {
+          // Horizontal line for partners
+          return `M ${d.source.x} ${d.source.y} H ${d.target.x}`;
+        } else {
+          // Curved paths for parents/children
+          return d3.linkVertical()
+            .x(d => d.x)
+            .y(d => d.y)(d);
+        }
+      })
+      .attr('stroke', d => {
+        // Color links based on relationship
+        if (d.target.data.relationship === 'partner') {
+          return '#9333ea'; // Purple for partnerships
+        } else if (d.target.data.relationship === 'child') {
+          return '#4f46e5'; // Indigo for child relationships
+        } else {
+          return '#059669'; // Green for parent relationships
+        }
+      })
+      .attr('stroke-width', 2)
+      .attr('fill', 'none')
+      .attr('stroke-dasharray', d => 
+        d.target.data.relationship === 'partner' ? '5,5' : 'none'
+      );
+    
+    // Create node groups
+    const nodes = g.selectAll('.node')
+      .data(treeData.descendants())
+      .enter()
+      .append('g')
+      .attr('class', 'node')
+      .attr('transform', d => `translate(${d.x},${d.y})`)
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        setSelectedNode(d.data);
+        // Update link form data if creating link from selected node
+        if (d.data.id) {
+          setLinkFormData(prev => ({
+            ...prev,
+            sourceId: d.data.id,
+            sourceName: d.data.name
+          }));
+        }
+      });
+    
+    // Add node backgrounds
+    nodes.append('rect')
+      .attr('x', -60)
+      .attr('y', -30)
+      .attr('width', 120)
+      .attr('height', 60)
+      .attr('rx', 10)
+      .attr('ry', 10)
+      .attr('fill', d => {
+        if (d.data.type === 'self') {
+          return d.data.gender === 'male' ? '#bfdbfe' : '#fbcfe8'; // Highlighted main person
+        }
+        return d.data.gender === 'male' ? '#dbeafe' : '#fce7f3'; // Regular nodes
+      })
+      .attr('stroke', d => {
+        // Highlight selected node
+        if (selectedNode && selectedNode.id === d.data.id) {
+          return '#000';
+        }
+        return d.data.gender === 'male' ? '#3b82f6' : '#ec4899';
+      })
+      .attr('stroke-width', d => selectedNode && selectedNode.id === d.data.id ? 3 : 1)
+      .attr('opacity', 0.8);
+    
+    // Add profile images or user icons
+    nodes.append('circle')
+      .attr('cy', -10)
+      .attr('r', 15)
+      .attr('fill', d => {
+        if (d.data.profileImage) {
+          return 'url(#pattern-' + d.data.id + ')';
+        }
+        return d.data.gender === 'male' ? '#93c5fd' : '#f9a8d4';
+      })
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 2);
+    
+    // Define patterns for profile images
+    nodes.filter(d => d.data.profileImage)
+      .append('defs')
+      .append('pattern')
+      .attr('id', d => 'pattern-' + d.data.id)
+      .attr('width', 1)
+      .attr('height', 1)
+      .attr('patternContentUnits', 'objectBoundingBox')
+      .append('image')
+      .attr('width', 1)
+      .attr('height', 1)
+      .attr('preserveAspectRatio', 'xMidYMid slice')
+      .attr('xlink:href', d => d.data.profileImage);
+    
+    // Add user icons for nodes without images
+    nodes.filter(d => !d.data.profileImage)
+      .append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('y', -10)
+      .attr('font-family', 'FontAwesome')
+      .attr('font-size', '14px')
+      .attr('fill', '#fff')
+      .text('\uf007'); // Unicode for user icon
+    
+    // Add name labels
+    nodes.append('text')
+      .attr('dy', 15)
+      .attr('text-anchor', 'middle')
+      .attr('font-weight', 'bold')
+      .text(d => {
+        // Truncate long names
+        const name = d.data.name || 'Inconnu';
+        return name.length > 15 ? name.substring(0, 12) + '...' : name;
+      })
+      .style('font-size', '12px')
+      .style('fill', '#333');
+    
+    // Add relationship labels for clarity
+    nodes.filter(d => d.data.relationship)
+      .append('text')
+      .attr('dy', 30)
+      .attr('text-anchor', 'middle')
+      .text(d => {
+        switch(d.data.relationship) {
+          case 'parent': return d.data.gender === 'male' ? 'Père' : 'Mère';
+          case 'partner': return 'Conjoint(e)';
+          case 'child': return 'Enfant';
+          case 'grandparent': return d.data.gender === 'male' ? 'Grand-père' : 'Grand-mère';
+          default: return '';
+        }
+      })
+      .style('font-size', '10px')
+      .style('fill', '#666')
+      .style('font-style', 'italic');
+    
+    // Center the view on the root node
+    const initialScale = 0.8;
+    const initialX = width / 2 - treeData.x * initialScale;
+    const initialY = height / 3 - treeData.y * initialScale;
+    
+    svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(initialScale));
+  };
+
+  // Create family link function
+  const createFamilyLink = (formData) => {
+    if (!formData.sourceId || !formData.targetName) return;
+    
+    // Create a new person based on form data
+    const newId = Date.now().toString();
+    const newPerson = {
+      id: newId,
+      name: formData.targetName,
+      gender: formData.targetGender,
+      birthDate: formData.targetBirthDate || '',
+      birthPlace: formData.targetBirthPlace || '',
+      profileImage: '',
+      parents: [],
+      children: [],
+      partners: []
+    };
+    
+    // Get the source person
+    const sourcePerson = peopleDatabase[formData.sourceId];
+    if (!sourcePerson) return;
+    
+    // Update relationships based on the type
+    switch(formData.relationshipType) {
+      case 'parent':
+        // Make the new person a parent of the source
+        sourcePerson.parents.push(newId);
+        newPerson.children.push(formData.sourceId);
+        break;
+        
+      case 'child':
+        // Make the new person a child of the source
+        sourcePerson.children.push(newId);
+        newPerson.parents.push(formData.sourceId);
+        break;
+        
+      case 'partner':
+        // Create a partnership relationship
+        sourcePerson.partners.push(newId);
+        newPerson.partners.push(formData.sourceId);
+        break;
+        
+      case 'sibling':
+        // Make the new person a sibling by giving them the same parents
+        for (const parentId of sourcePerson.parents) {
+          const parent = peopleDatabase[parentId];
+          if (parent) {
+            parent.children.push(newId);
+            newPerson.parents.push(parentId);
+          }
+        }
+        break;
+    }
+    
+    // Update the database with both modified people
+    setPeopleDatabase(prev => ({
+      ...prev,
+      [formData.sourceId]: sourcePerson,
+      [newId]: newPerson
+    }));
+    
+    // Reset form and close modal
+    setIsCreatingLink(false);
+  };
+
+  // Handle various UI events
   const handleEditClick = () => {
     setIsEditing(true);
-    setShowAddMenu(false);
+  };
+
+  const handleCreateLinkClick = () => {
+    setIsCreatingLink(true);
+    if (selectedNode) {
+      setLinkFormData(prev => ({
+        ...prev,
+        sourceId: selectedNode.id,
+        sourceName: selectedNode.name
+      }));
+    } else {
+      // Reset form if no node is selected
+      setLinkFormData({
+        sourceId: '',
+        sourceName: '',
+        targetName: '',
+        targetGender: 'male',
+        targetBirthDate: '',
+        targetBirthPlace: '',
+        relationshipType: 'child'
+      });
+    }
+  };
+
+  const handleLinkFormChange = (e) => {
+    const { name, value } = e.target;
+    setLinkFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleCancelEdit = () => {
@@ -59,19 +461,41 @@ export default function TreeGraph({ userData, updateUserData }) {
     });
   };
 
+  const handleCancelLinkCreate = () => {
+    setIsCreatingLink(false);
+  };
+
   const handleSaveEdit = () => {
-    updateUserData({...editForm, familyMembers});
+    updateUserData(editForm);
     setIsEditing(false);
+    
+    // Update the family data with the edited information
+    setFamilyData(prev => ({
+      ...prev,
+      name: editForm.userName,
+      gender: editForm.gender,
+      birthDate: editForm.birthDate,
+      birthPlace: editForm.birthPlace,
+      profileImage: editForm.profileImage
+    }));
+    
+    // Also update in the people database
+    setPeopleDatabase(prev => ({
+      ...prev,
+      '1': {
+        ...prev['1'],
+        name: editForm.userName,
+        gender: editForm.gender,
+        birthDate: editForm.birthDate,
+        birthPlace: editForm.birthPlace,
+        profileImage: editForm.profileImage
+      }
+    }));
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setEditForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleNewMemberInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewMember(prev => ({ ...prev, [name]: value }));
   };
 
   const handleImageChange = (e) => {
@@ -85,508 +509,379 @@ export default function TreeGraph({ userData, updateUserData }) {
     }
   };
 
-  const handleNewMemberImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setNewMember(prev => ({ ...prev, profileImage: event.target.result }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const toggleAddMenu = () => {
-    setShowAddMenu(prev => !prev);
-    setIsEditing(false);
-  };
-
-  const selectRelation = (relation) => {
-    setSelectedRelation(relation);
-    setShowAddForm(true);
-    setShowAddMenu(false);
-    
-    // Initialize new member with relation
-    setNewMember(prev => ({
-      ...prev,
-      id: `member-${Date.now()}`,
-      relation: relation
-    }));
-  };
-
-  const handleAddMember = (e) => {
-    e.preventDefault();
-    
-    const updatedFamilyMembers = {...familyMembers};
-    
-    switch(newMember.relation) {
-      case 'father':
-        updatedFamilyMembers.father = newMember;
-        break;
-      case 'mother':
-        updatedFamilyMembers.mother = newMember;
-        break;
-      case 'sibling':
-        updatedFamilyMembers.siblings = [...updatedFamilyMembers.siblings, newMember];
-        break;
-      case 'child':
-        updatedFamilyMembers.children = [...updatedFamilyMembers.children, newMember];
-        break;
-      case 'spouse':
-        updatedFamilyMembers.spouse = newMember;
-        break;
-      default:
-        break;
-    }
-    
-    setFamilyMembers(updatedFamilyMembers);
-    updateUserData({...userData, familyMembers: updatedFamilyMembers});
-    
-    // Reset form
-    setShowAddForm(false);
-    setSelectedRelation(null);
-    setNewMember({
-      id: '',
-      profileImage: '',
-      userName: '',
-      gender: '',
-      birthDate: '',
-      birthPlace: '',
-      relation: ''
-    });
-  };
-
-  const cancelAddMember = () => {
-    setShowAddForm(false);
-    setSelectedRelation(null);
-  };
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.1, 2));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => Math.max(prev - 0.1, 0.5));
-  };
-
   return (
     <div className="flex-1 bg-gray-50 p-4 relative overflow-hidden">
-      {isEditing ? (
-        <ProfileEditForm
-          editForm={editForm}
-          handleInputChange={handleInputChange}
-          handleImageChange={handleImageChange}
-          handleCancelEdit={handleCancelEdit}
-          handleSaveEdit={handleSaveEdit}
-        />
-      ) : null}
-
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">
-                Ajouter {selectedRelation === 'father' ? 'le père' : 
-                         selectedRelation === 'mother' ? 'la mère' : 
-                         selectedRelation === 'sibling' ? 'un frère/une sœur' : 
-                         selectedRelation === 'child' ? 'un enfant' : 'un(e) conjoint(e)'}
-              </h3>
-              <button 
-                onClick={cancelAddMember}
-                className="p-1 rounded-full text-gray-500 hover:bg-gray-100"
-              >
-                <FaTimes />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddMember}>
-              <div className="space-y-4">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="h-20 w-20 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-md relative">
-                    {newMember.profileImage ? (
-                      <img 
-                        src={newMember.profileImage} 
-                        alt="Profile" 
-                        className="h-full w-full object-cover"
-                      />
+      {/* Edit Profile Form */}
+      {isEditing && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 z-10 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-lg font-semibold mb-4">Modifier mon profil</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Photo de profil
+                </label>
+                <div className="flex items-center space-x-4">
+                  <div className={`h-16 w-16 rounded-full flex items-center justify-center overflow-hidden border-2 shadow-md ${
+                    editForm.profileImage ? '' : editForm.gender === 'male' ? 'bg-blue-100 border-blue-300' : 'bg-pink-100 border-pink-300'
+                  }`}>
+                    {editForm.profileImage ? (
+                      <img src={editForm.profileImage} alt="Profile" className="h-full w-full object-cover" />
                     ) : (
-                      <FaUser className="h-8 w-8 text-gray-400" />
+                      <FaUser className={`h-6 w-6 ${editForm.gender === 'male' ? 'text-blue-600' : 'text-pink-600'}`} />
                     )}
-                    <input 
-                      type="file" 
-                      id="newProfileImage" 
-                      name="profileImage"
-                      onChange={handleNewMemberImageChange}
-                      className="opacity-0 absolute inset-0 cursor-pointer"
-                    />
                   </div>
-                </div>
-
-                <div>
-                  <label htmlFor="userName" className="block text-sm font-medium text-gray-700">Nom complet</label>
                   <input
-                    type="text"
-                    id="userName"
-                    name="userName"
-                    value={newMember.userName}
-                    onChange={handleNewMemberInputChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    required
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="text-sm text-gray-600"
                   />
-                </div>
-
-                <div>
-                  <label htmlFor="gender" className="block text-sm font-medium text-gray-700">Genre</label>
-                  <select
-                    id="gender"
-                    name="gender"
-                    value={newMember.gender}
-                    onChange={handleNewMemberInputChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Sélectionner</option>
-                    <option value="male">Homme</option>
-                    <option value="female">Femme</option>
-                    <option value="other">Autre</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700">Date de naissance</label>
-                  <input
-                    type="date"
-                    id="birthDate"
-                    name="birthDate"
-                    value={newMember.birthDate}
-                    onChange={handleNewMemberInputChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="birthPlace" className="block text-sm font-medium text-gray-700">Lieu de naissance</label>
-                  <input
-                    type="text"
-                    id="birthPlace"
-                    name="birthPlace"
-                    value={newMember.birthPlace}
-                    onChange={handleNewMemberInputChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="flex space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={cancelAddMember}
-                    className="flex-1 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    Enregistrer
-                  </button>
                 </div>
               </div>
-            </form>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nom de l'arbre
+                </label>
+                <input
+                  type="text"
+                  name="treeName"
+                  value={editForm.treeName || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nom complet
+                </label>
+                <input
+                  type="text"
+                  name="userName"
+                  value={editForm.userName || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Genre
+                </label>
+                <select
+                  name="gender"
+                  value={editForm.gender || 'male'}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="male">Masculin</option>
+                  <option value="female">Féminin</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date de naissance
+                </label>
+                <input
+                  type="text"
+                  name="birthDate"
+                  placeholder="AAAA-MM-JJ"
+                  value={editForm.birthDate || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lieu de naissance
+                </label>
+                <input
+                  type="text"
+                  name="birthPlace"
+                  value={editForm.birthPlace || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Create Family Link Form */}
+      {isCreatingLink && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 z-10 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-lg font-semibold mb-4">
+              {linkFormData.sourceId ? 
+                `Créer un lien familial à partir de ${linkFormData.sourceName}` : 
+                'Créer un lien familial'}
+            </h2>
+            
+            <div className="space-y-4">
+              {!linkFormData.sourceId && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+                  Vous n'avez pas sélectionné de personne source. Veuillez d'abord sélectionner une personne dans l'arbre, ou remplir les informations de la source ci-dessous.
+                </div>
+              )}
+              
+              {!linkFormData.sourceId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nom de la source
+                  </label>
+                  <select
+                    name="sourceId"
+                    value={linkFormData.sourceId}
+                    onChange={handleLinkFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="">Sélectionner une personne</option>
+                    {Object.entries(peopleDatabase).map(([id, person]) => (
+                      <option key={id} value={id}>{person.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type de relation
+                </label>
+                <select
+                  name="relationshipType"
+                  value={linkFormData.relationshipType}
+                  onChange={handleLinkFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="parent">Parent (la cible est parent de la source)</option>
+                  <option value="child">Enfant (la cible est enfant de la source)</option>
+                  <option value="partner">Conjoint(e) (la cible est conjoint(e) de la source)</option>
+                  <option value="sibling">Frère/Sœur (la cible est frère/sœur de la source)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nom de la cible
+                </label>
+                <input
+                  type="text"
+                  name="targetName"
+                  value={linkFormData.targetName}
+                  onChange={handleLinkFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Nom de la personne à ajouter"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Genre de la cible
+                </label>
+                <select
+                  name="targetGender"
+                  value={linkFormData.targetGender}
+                  onChange={handleLinkFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="male">Masculin</option>
+                  <option value="female">Féminin</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date de naissance (optionnel)
+                </label>
+                <input
+                  type="text"
+                  name="targetBirthDate"
+                  placeholder="AAAA-MM-JJ"
+                  value={linkFormData.targetBirthDate}
+                  onChange={handleLinkFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lieu de naissance (optionnel)
+                </label>
+                <input
+                  type="text"
+                  name="targetBirthPlace"
+                  value={linkFormData.targetBirthPlace}
+                  onChange={handleLinkFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={handleCancelLinkCreate}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => createFamilyLink(linkFormData)}
+                disabled={!linkFormData.sourceId || !linkFormData.targetName}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-md ${
+                  !linkFormData.sourceId || !linkFormData.targetName
+                    ? 'bg-blue-300 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                Créer le lien
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="absolute inset-0 flex items-center justify-center overflow-auto">
-        <div 
-          className="relative"
-          style={{
-            transform: `scale(${zoomLevel})`,
-            transition: 'transform 0.3s ease'
-          }}
-        >
-          {/* Parents */}
-          <div className="flex justify-center mb-8 space-x-16">
-            <div className="flex flex-col items-center">
-              {familyMembers.father ? (
-                <div className="border-2 border-blue-400 rounded-xl p-3 bg-white shadow-lg w-40 transition-all duration-200 hover:shadow-xl hover:border-blue-500">
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-md">
-                      {familyMembers.father.profileImage ? (
-                        <img 
-                          src={familyMembers.father.profileImage} 
-                          alt="Profile" 
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <FaUser className="h-4 w-4 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm font-medium text-gray-900 truncate">{familyMembers.father.userName}</div>
-                      <div className="text-xs text-gray-500">{familyMembers.father.birthDate}</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button 
-                  onClick={() => selectRelation('father')}
-                  className="w-40 h-14 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center bg-white hover:bg-gray-50 transition-colors duration-200 shadow-sm hover:shadow-md"
-                >
-                  <FaPlus className="text-gray-400" />
-                  <span className="ml-2 text-sm text-gray-600 font-medium">Ajouter le père</span>
-                </button>
-              )}
-            </div>
-            
-            <div className="flex flex-col items-center">
-              {familyMembers.mother ? (
-                <div className="border-2 border-pink-400 rounded-xl p-3 bg-white shadow-lg w-40 transition-all duration-200 hover:shadow-xl hover:border-pink-500">
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-md">
-                      {familyMembers.mother.profileImage ? (
-                        <img 
-                          src={familyMembers.mother.profileImage} 
-                          alt="Profile" 
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <FaUser className="h-4 w-4 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm font-medium text-gray-900 truncate">{familyMembers.mother.userName}</div>
-                      <div className="text-xs text-gray-500">{familyMembers.mother.birthDate}</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button 
-                  onClick={() => selectRelation('mother')}
-                  className="w-40 h-14 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center bg-white hover:bg-gray-50 transition-colors duration-200 shadow-sm hover:shadow-md"
-                >
-                  <FaPlus className="text-gray-400" />
-                  <span className="ml-2 text-sm text-gray-600 font-medium">Ajouter la mère</span>
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* Connection line to central person */}
-          <div className="w-px h-8 bg-gradient-to-b from-gray-300 to-transparent mx-auto"></div>
-          
-          {/* Main person and spouse */}
-          <div className="flex justify-center space-x-6">
-            {/* Siblings on the left */}
-            {familyMembers.siblings.length > 0 && (
-              <div className="flex flex-col items-center mr-6">
-                <div className="flex flex-col space-y-3">
-                  {familyMembers.siblings.map((sibling, index) => (
-                    <div key={sibling.id} className="border-2 border-purple-300 rounded-xl p-2 bg-white shadow-md w-32 transition-all duration-200 hover:shadow-lg">
-                      <div className="flex items-center space-x-2">
-                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-purple-100 to-blue-100 flex items-center justify-center overflow-hidden border border-white shadow-sm">
-                          {sibling.profileImage ? (
-                            <img 
-                              src={sibling.profileImage} 
-                              alt="Profile" 
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <FaUser className="h-3 w-3 text-gray-600" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-gray-900 truncate">{sibling.userName}</div>
-                          <div className="text-xxs text-gray-500">{sibling.birthDate}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button 
-                  onClick={() => selectRelation('sibling')}
-                  className="mt-2 py-1 px-2 border border-gray-200 rounded-md bg-white text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors duration-200 flex items-center"
-                >
-                  <FaPlus className="mr-1 h-3 w-3" />
-                  <span>Frère/Sœur</span>
-                </button>
-              </div>
-            )}
-            
-            {/* Main person */}
-            <div className="border-2 border-blue-500 rounded-xl p-3 bg-white shadow-lg w-56 transition-all duration-200 hover:shadow-xl">
-              <div className="flex items-center space-x-3">
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-md">
-                  {userData.profileImage ? (
-                    <img 
-                      src={userData.profileImage} 
-                      alt="Profile" 
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <FaUser className="h-5 w-5 text-gray-600" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900 truncate">{userData.userName}</div>
-                  <div className="text-xs text-gray-500">{userData.birthDate}</div>
-                  <div className="text-xs text-gray-400">{userData.birthPlace}</div>
-                </div>
-                <button 
-                  onClick={handleEditClick}
-                  className="p-1 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors duration-200"
-                >
-                  <FaEdit className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-            
-            {/* Spouse */}
-            {familyMembers.spouse ? (
-              <div className="border-2 border-pink-300 rounded-xl p-3 bg-white shadow-md w-52 transition-all duration-200 hover:shadow-lg">
-                <div className="flex items-center space-x-3">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
-                    {familyMembers.spouse.profileImage ? (
-                      <img 
-                        src={familyMembers.spouse.profileImage} 
-                        alt="Profile" 
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <FaUser className="h-4 w-4 text-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{familyMembers.spouse.userName}</div>
-                    <div className="text-xs text-gray-500">{familyMembers.spouse.birthDate}</div>
-                    <div className="text-xs text-gray-400">{familyMembers.spouse.birthPlace}</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <button 
-                onClick={() => selectRelation('spouse')}
-                className="border-2 border-dashed border-gray-300 rounded-xl p-3 bg-white hover:bg-gray-50 transition-colors duration-200 shadow-sm hover:shadow-md flex items-center justify-center w-44"
-              >
-                <FaPlus className="text-gray-400 mr-2" />
-                <span className="text-sm text-gray-600 font-medium">Ajouter conjoint(e)</span>
-              </button>
-            )}
-            
-            {/* Add sibling button if no siblings yet */}
-            {familyMembers.siblings.length === 0 && (
-              <button 
-                onClick={() => selectRelation('sibling')}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full py-1.5 px-3 border border-gray-200 rounded-lg bg-white text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors duration-200 flex items-center shadow-sm"
-              >
-                <FaPlus className="mr-1 h-3 w-3" />
-                <span>Frère/Sœur</span>
-              </button>
-            )}
-          </div>
-          
-          {/* Connection line to children */}
-          <div className="w-px h-8 bg-gradient-to-b from-transparent to-gray-300 mx-auto mt-1"></div>
-          
-          {/* Children */}
-          <div className="flex justify-center mt-1">
-            <div className="flex flex-wrap justify-center gap-4 max-w-2xl">
-              {familyMembers.children.map((child, index) => (
-                <div key={child.id} className="border-2 border-green-300 rounded-xl p-2 bg-white shadow-md w-40 transition-all duration-200 hover:shadow-lg">
-                  <div className="flex items-center space-x-2">
-                    <div className="h-9 w-9 rounded-full bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center overflow-hidden border border-white shadow-sm">
-                      {child.profileImage ? (
-                        <img 
-                          src={child.profileImage} 
-                          alt="Profile" 
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <FaUser className="h-4 w-4 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{child.userName}</div>
-                      <div className="text-xs text-gray-500">{child.birthDate}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              <button 
-                onClick={() => selectRelation('child')}
-                className="h-12 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center bg-white hover:bg-gray-50 transition-colors duration-200 shadow-sm hover:shadow-md px-4"
-              >
-                <FaPlus className="text-gray-400 mr-2" />
-                <span className="text-sm text-gray-600 font-medium">Ajouter un enfant</span>
-              </button>
-            </div>
-          </div>
+      <div className="absolute inset-0">
+        <svg ref={svgRef} className="w-full h-full"></svg>
+        <div ref={tooltipRef} className="absolute hidden"></div>
+      </div>
+
+      {/* Control panel with zoom controls and instructions */}
+      <div className="absolute left-4 top-4 bg-white p-2 rounded-lg shadow-md text-sm opacity-80 hover:opacity-100 transition-opacity">
+        <div className="flex items-center space-x-2 text-gray-600">
+          <FaArrowsAlt className="text-blue-500" />
+          <span>Utilisez la molette pour zoomer et cliquez-glissez pour vous déplacer</span>
         </div>
       </div>
-      
-      {/* Zoom controls */}
-      <div className="absolute right-4 bottom-4 flex flex-col space-y-2 bg-white rounded-lg shadow-lg p-2 border border-gray-200">
-        <button 
-          onClick={handleZoomIn}
-          className="p-2 hover:bg-gray-100 rounded-md transition-colors duration-200"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-        </button>
-        <button 
-          onClick={handleZoomOut}
-          className="p-2 hover:bg-gray-100 rounded-md transition-colors duration-200"
-        >
-          <FaMinus className="h-5 w-5 text-gray-600" />
-        </button>
-      </div>
-      
-      {/* Add relation button */}
-      <div className="absolute left-4 bottom-4">
-        <button
-          onClick={toggleAddMenu}
-          className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 shadow-lg transition-colors duration-200"
-        >
-          <FaPlus className="h-5 w-5" />
-        </button>
-        
-        {showAddMenu && (
-          <div className="absolute bottom-14 left-0 bg-white rounded-lg shadow-xl border border-gray-200 p-2 w-48">
-            <div className="text-sm font-medium text-gray-700 mb-2 px-2">Ajouter une relation</div>
+
+      {/* Person info panel */}
+      {selectedNode && (
+        <div className="absolute right-4 top-4 bg-white p-4 rounded-lg shadow-lg border border-gray-200 w-64">
+          <div className="flex items-center space-x-3 mb-3">
+            <div className={`h-12 w-12 rounded-full flex items-center justify-center overflow-hidden border-2 shadow-md ${selectedNode.profileImage ? '' : selectedNode.gender === 'male' ? 'bg-blue-100 border-blue-300' : 'bg-pink-100 border-pink-300'}`}>
+            {selectedNode.profileImage ? (
+                <img src={selectedNode.profileImage} alt="Profile" className="h-full w-full object-cover" />
+              ) : (
+                <FaUser className={`h-6 w-6 ${selectedNode.gender === 'male' ? 'text-blue-600' : 'text-pink-600'}`} />
+              )}
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800">{selectedNode.name || 'Inconnu'}</h3>
+              <p className="text-xs text-gray-500">
+                {selectedNode.relationship ? (
+                  selectedNode.relationship === 'parent' ? 
+                    selectedNode.gender === 'male' ? 'Père' : 'Mère' :
+                  selectedNode.relationship === 'partner' ? 'Conjoint(e)' :
+                  selectedNode.relationship === 'child' ? 'Enfant' : 
+                  selectedNode.relationship === 'grandparent' ? 
+                    selectedNode.gender === 'male' ? 'Grand-père' : 'Grand-mère' : ''
+                ) : (
+                  'Vous'
+                )}
+              </p>
+            </div>
+          </div>
+          
+          <div className="space-y-2 mb-4 text-sm">
+            {selectedNode.birthDate && (
+              <div>
+                <span className="font-medium text-gray-700">Date de naissance:</span>{' '}
+                <span className="text-gray-600">{selectedNode.birthDate}</span>
+              </div>
+            )}
+            
+            {selectedNode.birthPlace && (
+              <div>
+                <span className="font-medium text-gray-700">Lieu de naissance:</span>{' '}
+                <span className="text-gray-600">{selectedNode.birthPlace}</span>
+              </div>
+            )}
+            
+            <div>
+              <span className="font-medium text-gray-700">Genre:</span>{' '}
+              <span className="text-gray-600">
+                {selectedNode.gender === 'male' ? 'Masculin' : 'Féminin'}
+              </span>
+            </div>
+            
+            <div className="font-medium text-gray-700">Relations:</div>
+            <ul className="pl-2 text-xs space-y-1">
+              {selectedNode.parents && selectedNode.parents.length > 0 && (
+                <li className="text-gray-600">
+                  {selectedNode.parents.length} parent(s)
+                </li>
+              )}
+              
+              {selectedNode.children && selectedNode.children.length > 0 && (
+                <li className="text-gray-600">
+                  {selectedNode.children.length} enfant(s)
+                </li>
+              )}
+              
+              {selectedNode.partners && selectedNode.partners.length > 0 && (
+                <li className="text-gray-600">
+                  {selectedNode.partners.length} conjoint(s)
+                </li>
+              )}
+              
+              {(!selectedNode.parents || selectedNode.parents.length === 0) && 
+               (!selectedNode.children || selectedNode.children.length === 0) && 
+               (!selectedNode.partners || selectedNode.partners.length === 0) && (
+                <li className="text-gray-600 italic">
+                  Aucune relation connue
+                </li>
+              )}
+            </ul>
+          </div>
+          
+          <div className="flex space-x-2">
+            {selectedNode.type === 'self' && (
+              <button
+                onClick={handleEditClick}
+                className="flex items-center justify-center px-3 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium flex-1"
+              >
+                <FaEdit className="mr-1" />
+                Modifier
+              </button>
+            )}
+            
             <button
-              onClick={() => selectRelation('father')}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded-md flex items-center"
+              onClick={handleCreateLinkClick}
+              className="flex items-center justify-center px-3 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs font-medium flex-1"
             >
-              <FaUser className="mr-2 text-blue-500" /> Père
-            </button>
-            <button
-              onClick={() => selectRelation('mother')}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded-md flex items-center"
-            >
-              <FaUser className="mr-2 text-pink-500" /> Mère
-            </button>
-            <button
-              onClick={() => selectRelation('sibling')}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded-md flex items-center"
-            >
-              <FaUser className="mr-2 text-purple-500" /> Frère/Sœur
-            </button>
-            <button
-              onClick={() => selectRelation('spouse')}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded-md flex items-center"
-            >
-              <FaUser className="mr-2 text-red-500" /> Conjoint(e)
-            </button>
-            <button
-              onClick={() => selectRelation('child')}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded-md flex items-center"
-            >
-              <FaUser className="mr-2 text-green-500" /> Enfant
+              <FaLink className="mr-1" />
+              Lier
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Add new person button */}
+      <button
+        onClick={handleCreateLinkClick}
+        className="absolute right-4 bottom-4 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors"
+      >
+        <FaPlus />
+      </button>
     </div>
   );
 }
