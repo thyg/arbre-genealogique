@@ -73,7 +73,7 @@ export default function LinkCreationModal({ mode, sourcePerson, peopleDatabase, 
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <h3 className="text-lg font-medium text-gray-900">
-            {mode === 'fromSelected' ? `Créer un lien depuis ${sourcePerson?.name}` : 'Créer un nouveau lien familial'}
+            {mode === 'fromSelected' ? `Créer un lien depuis ${sourcePerson?.name.toUpperCase}` : 'Créer un nouveau lien familial'}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
             <FaTimes />
