@@ -1,4 +1,3 @@
-
 // src/app/lib/api.ts
 
 // Base URL du proxy Next.js
@@ -37,7 +36,6 @@ export async function getTreeMembers(
   }));
 }
 
-
 /** Étape unique dans le chemin retourné par Dijkstra */
 export interface RelationshipStep {
   fromPerson:   string;
@@ -69,7 +67,6 @@ export async function getRelationship(
   endId:        string,
   familyTreeId: string
 ): Promise<{ path: RelationshipStep[]; totalWeight: number }> {
-  // Construire l’URL de l’endpoint avec les query params
   const endpoint =
     `${BASE_URL}/family-link/dijkstra` +
     `?startId=${encodeURIComponent(startId)}` +
@@ -82,7 +79,6 @@ export async function getRelationship(
   }
   const json: GetRelationshipResponse = await res.json();
 
-  // Transformer le path brut en RelationshipStep[]
   const path: RelationshipStep[] = json.data.path.map(step => ({
     fromPerson:   step.fromPerson,
     toPerson:     step.toPerson,
@@ -93,4 +89,106 @@ export async function getRelationship(
     path,
     totalWeight: json.data.totalWeight,
   };
+}
+
+/** Payload to create a new family tree */
+export interface CreateTreePayload {
+  name:             string;
+  description:      string;
+  geographicOrigin: string;
+  creator:          string; 
+}
+
+/** Response shape for creating a tree */
+interface CreateTreeResponse {
+  value: string;
+  data: { id: string };
+}
+
+/**
+ * Crée un nouvel arbre généalogique.
+ * Renvoie l’ID de l’arbre créé.
+ */
+export async function createTree(
+  payload: CreateTreePayload
+): Promise<{ id: string }> {
+  const res = await fetch(`${BASE_URL}/family-trees`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: CreateTreeResponse = await res.json();
+  return { id: String(json.data.id) };
+}
+
+/** Payload to create a new person in an existing tree */
+export interface CreatePersonPayload {
+  treeId:     string;
+  firstName:  string;
+  lastName:   string;
+  birthDate?: string;
+  birthPlace?: string;
+  gender?:    string;
+}
+
+/** Response shape for creating a person */
+interface CreatePersonResponse {
+  value: string;
+  data: { id: string };
+}
+
+/**
+ * Crée une nouvelle personne dans un arbre existant.
+ * Renvoie l’ID de la personne créée.
+ */
+export async function createPerson(
+  payload: CreatePersonPayload
+): Promise<{ id: string }> {
+  const res = await fetch(`${BASE_URL}/persons`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: CreatePersonResponse = await res.json();
+  return { id: String(json.data.id) };
+}
+
+/** Payload to create a relationship between two people */
+export interface CreateRelationPayload {
+  familyTreeId: string;
+  fromId:       string;
+  toId:         string;
+  relationType: string;
+  weight?:      number;
+}
+
+/** Response shape for creating a relation */
+interface CreateRelationResponse {
+  value: string;
+  data: { id: string };
+}
+
+/**
+ * Crée un lien (relation) entre deux membres d’un arbre.
+ * Renvoie l’ID du lien créé.
+ */
+export async function createRelation(
+  payload: CreateRelationPayload
+): Promise<{ id: string }> {
+  const res = await fetch(`${BASE_URL}/family-link`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: CreateRelationResponse = await res.json();
+  return { id: String(json.data.id) };
 }
