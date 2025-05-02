@@ -437,6 +437,31 @@ export default function TreeGraph({ userData, updateUserData }) {
       .style('fill', '#666')
       .style('font-style', 'italic');
     
+
+
+      nodeGroups.filter(d => d.node.specialRelations)
+  .append('text')
+  .attr('dy', 45)
+  .attr('text-anchor', 'middle')
+  .text(d => {
+    const specialRelations = d.node.specialRelations || [];
+    return specialRelations.map(rel => {
+      switch(rel.type) {
+        case 'sibling': return 'Frère/Soeur';
+        case 'uncle': return 'Oncle';
+        case 'aunt': return 'Tante';
+        case 'nephew': return 'Neveu';
+        case 'niece': return 'Nièce';
+        case 'cousin': return 'Cousin(e)';
+        case 'grandparent': return 'Grand-parent';
+        case 'grandchild': return 'Petit-enfant';
+        default: return '';
+      }
+    }).filter(Boolean).join(', ');
+  })
+  .style('font-size', '9px')
+  .style('fill', '#666')
+  .style('font-style', 'italic');
     // Draw family nodes (small dots for connections)
     g.selectAll('.family-node')
       .data(Object.values(positions).filter(p => p.node.isFamilyNode))
@@ -453,21 +478,19 @@ export default function TreeGraph({ userData, updateUserData }) {
   const createFamilyLink = (sourceId, targetData, relationshipType) => {
     if (!sourceId || !targetData || !relationshipType) return;
     
-    // Check parent limits - enforce max 2 parents (one male, one female)
+    // Vérifications spécifiques pour les parents
     if (relationshipType === 'parent') {
       const sourcePerson = peopleDatabase[sourceId];
       
-      // Check for maximum 2 parents
+      // Vérification du nombre maximum de parents
       if (sourcePerson.parents.length >= 2) {
         alert('Un individu ne peut avoir que 2 parents maximum');
         return;
       }
       
-      // Check for gender balance
+      // Vérification du genre pour les parents
       if (targetData.id) {
         const targetPerson = peopleDatabase[targetData.id];
-        
-        // Check if we already have a parent of this gender
         const hasParentOfThisGender = sourcePerson.parents.some(parentId => {
           const parent = peopleDatabase[parentId];
           return parent.gender === targetPerson.gender;
@@ -478,7 +501,6 @@ export default function TreeGraph({ userData, updateUserData }) {
           return;
         }
       } else {
-        // New parent - check if we already have a parent of this gender
         const hasParentOfThisGender = sourcePerson.parents.some(parentId => {
           const parent = peopleDatabase[parentId];
           return parent.gender === targetData.gender;
@@ -491,13 +513,14 @@ export default function TreeGraph({ userData, updateUserData }) {
       }
     }
     
-    // Create or update the relationship
+    // Création ou mise à jour de la relation
     if (targetData.id) {
       const sourcePerson = peopleDatabase[sourceId];
       const targetPerson = peopleDatabase[targetData.id];
       
       if (!sourcePerson || !targetPerson) return;
       
+      // Gestion de toutes les relations
       switch(relationshipType) {
         case 'parent':
           if (!sourcePerson.parents.includes(targetData.id)) {
@@ -519,6 +542,29 @@ export default function TreeGraph({ userData, updateUserData }) {
             targetPerson.partners.push(sourceId);
           }
           break;
+          
+        case 'sibling':
+          // Pour les frères/soeurs, on ajoute les mêmes parents
+          if (sourcePerson.parents.length > 0) {
+            sourcePerson.parents.forEach(parentId => {
+              if (!targetPerson.parents.includes(parentId)) {
+                targetPerson.parents.push(parentId);
+                const parent = peopleDatabase[parentId];
+                parent.children.push(targetData.id);
+              }
+            });
+          }
+          break;
+          
+        // Les autres relations (oncle, tante, etc.) peuvent être gérées comme des relations spéciales
+        // qui n'ont pas d'impact direct sur la structure de l'arbre
+        default:
+          // Pour les autres relations, on pourrait ajouter un champ 'relationsSpeciales'
+          if (!sourcePerson.specialRelations) sourcePerson.specialRelations = [];
+          sourcePerson.specialRelations.push({
+            type: relationshipType,
+            personId: targetData.id
+          });
       }
       
       setPeopleDatabase(prev => ({
@@ -527,7 +573,7 @@ export default function TreeGraph({ userData, updateUserData }) {
         [targetData.id]: targetPerson
       }));
     } else {
-      // Create a new person
+      // Création d'une nouvelle personne
       const newId = Date.now().toString();
       const newPerson = {
         id: newId,
@@ -538,7 +584,8 @@ export default function TreeGraph({ userData, updateUserData }) {
         profileImage: targetData.profileImage || '',
         parents: [],
         children: [],
-        partners: []
+        partners: [],
+        specialRelations: []
       };
       
       const sourcePerson = peopleDatabase[sourceId];
@@ -559,6 +606,23 @@ export default function TreeGraph({ userData, updateUserData }) {
           sourcePerson.partners.push(newId);
           newPerson.partners.push(sourceId);
           break;
+          
+        case 'sibling':
+          if (sourcePerson.parents.length > 0) {
+            newPerson.parents = [...sourcePerson.parents];
+            sourcePerson.parents.forEach(parentId => {
+              const parent = peopleDatabase[parentId];
+              parent.children.push(newId);
+            });
+          }
+          break;
+          
+        default:
+          if (!sourcePerson.specialRelations) sourcePerson.specialRelations = [];
+          sourcePerson.specialRelations.push({
+            type: relationshipType,
+            personId: newId
+          });
       }
       
       setPeopleDatabase(prev => ({
@@ -570,7 +634,6 @@ export default function TreeGraph({ userData, updateUserData }) {
     
     setIsCreatingLink(false);
   };
-
   const handleEditClick = () => {
     setIsEditing(true);
   };
@@ -821,12 +884,15 @@ export default function TreeGraph({ userData, updateUserData }) {
               </div>
             )}
             
-            <div>
-              <span className="text-gray-600">Relations:</span> {' '}
-              {selectedNode.parents.length} parent(s), {' '}
-              {selectedNode.children.length} enfant(s), {' '}
-              {selectedNode.partners.length} conjoint(s)
-            </div>
+          <div>
+            <span className="text-gray-600">Relations:</span> {' '}
+            {selectedNode.parents.length} parent(s), {' '}
+            {selectedNode.children.length} enfant(s), {' '}
+            {selectedNode.partners.length} conjoint(s)
+            {selectedNode.specialRelations?.length > 0 && (
+              <>, {selectedNode.specialRelations.length} relation(s) spéciale(s)</>
+            )}
+          </div>
           </div>
           
           {/* Action buttons */}
@@ -924,7 +990,7 @@ function LinkCreationModal({ mode, sourcePerson, peopleDatabase, onClose, onSubm
   });
   
   return (
-    <div className="absolute inset-0 bg-black bg-opacity-50 z-10 flex items-center justify-center">
+    <div className="absolute inset-0  bg-opacity-50 z-10 flex items-center justify-center">
       <div className="bg-white p-6 rounded-lg max-w-md w-full">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">
@@ -945,10 +1011,18 @@ function LinkCreationModal({ mode, sourcePerson, peopleDatabase, onClose, onSubm
             onChange={(e) => setSelectedRelation(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md"
           >
-            <option value="">Sélectionnez une relation</option>
-            <option value="parent">Parent</option>
-            <option value="child">Enfant</option>
-            <option value="partner">Conjoint(e)</option>
+              <option value="">Sélectionnez une relation</option>
+              <option value="parent">Parent</option>
+              <option value="child">Enfant</option>
+              <option value="partner">Conjoint(e)</option>
+              <option value="sibling">Frère/Soeur</option>
+              <option value="uncle">Oncle</option>
+              <option value="aunt">Tante</option>
+              <option value="nephew">Neveu</option>
+              <option value="niece">Nièce</option>
+              <option value="cousin">Cousin(e)</option>
+              <option value="grandparent">Grand-parent</option>
+              <option value="grandchild">Petit-enfant</option>
           </select>
         </div>
         
