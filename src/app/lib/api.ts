@@ -169,39 +169,7 @@ export async function createPerson(
   return { id: String(json.data.id) };
 }
 
-/** Payload to create a relationship between two people */
-export interface CreateRelationPayload {
-  familyTreeId: string;
-  fromId:       string;
-  toId:         string;
-  relationType: string;
-  weight?:      number;
-}
 
-/** Response shape for creating a relation */
-interface CreateRelationResponse {
-  value: string;
-  data: { id: string };
-}
-
-/**
- * Crée un lien (relation) entre deux membres d’un arbre.
- * Renvoie l’ID du lien créé.
- */
-export async function createRelation(
-  payload: CreateRelationPayload
-): Promise<{ id: string }> {
-  const res = await fetch(`${BASE_URL}/family-link`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
-  }
-  const json: CreateRelationResponse = await res.json();
-  return { id: String(json.data.id) };
-}
 
 
 /** Shape brute renvoyée par GET /family-trees/:treeId */
@@ -411,65 +379,127 @@ export async function getPersonById(id: string): Promise<Person> {
 
 ////////////////////////creer un lien ///////////////////////////
 
-/** Payload pour créer un lien entre deux personnes avec informations complètes */
-export interface CreateRelationWithPersonsPayload {
-  familyTreeId: string | number;
-  relationType: string;
-  source: {
-    id?: string;      // Optionnel, si on utilise une personne existante
-    firstName: string;
-    lastName: string;
-    birthDate?: string;
-    birthPlace?: string;
-    gender?: string;
-  };
-  target: {
-    id?: string;      // Optionnel, si on utilise une personne existante
-    firstName: string;
-    lastName: string;
-    birthDate?: string;
-    birthPlace?: string;
-    gender?: string;
-  };
+/** Données complètes d’une personne à créer */
+export interface PersonData {
+  firstName:  string;
+  lastName:   string;
+  birthDate?: string;
+  birthPlace?:string;
+  gender?:    string;
 }
 
-/** Response shape pour la création d'un lien */
-interface CreateLinkResponse {
+/** Payload pour créer une relation entre deux NOUVELLES personnes */
+/** Payload pour créer un lien entre deux personnes existantes */
+export interface CreateRelationPayload {
+  familyTreeId: string | number;
+  sourceId:     string | number;
+  targetId:     string | number;
+  relationType: string;
+  weight?:      number;
+}
+
+
+/** Shape renvoyée par l’API après création */
+interface CreateRelationResponse {
   value: string;
-  data: { 
-    id: string;
-    id_source: string;
-    id_target: string;
+  data: {
+    id:           number | string;
+    id_source:    number | string;
+    id_target:    number | string;
     relationType: string;
-    weight: number;
+    weight:       number;
   };
 }
 
 /**
- * Crée un lien entre deux personnes, crée également les personnes si elles n'existent pas
- * Renvoie l'ID du lien créé et les informations associées.
+ * Crée une relation (et les deux personnes si elles n’existent pas)
+ * @param payload {CreateRelationPayload}
+ * @returns l’ID du lien créé et ses infos
  */
-export async function createLink(
-  payload: CreateRelationWithPersonsPayload
-): Promise<{ 
+export async function createRelation(
+  payload: CreateRelationPayload
+): Promise<{
   id: string;
   id_source: string;
-  id_target: string; 
+  id_target: string;
   relationType: string;
   weight: number;
 }> {
-  // Transformation du payload pour le format attendu par l'API
-  const requestPayload = {
+  const body = {
+    familyTreeId: payload.familyTreeId,
+    sourceId:     payload.sourceId,
+    targetId:     payload.targetId,
     relationType: payload.relationType,
-    source: payload.source,
-    target: payload.target,
-    familyTreeId: payload.familyTreeId
+    ...(payload.weight !== undefined ? { weight: payload.weight } : {}),
   };
 
   const res = await fetch(`${BASE_URL}/family-link`, {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestPayload),
+    body:    JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+
+  const json: CreateRelationResponse = await res.json();
+  return {
+    id:           String(json.data.id),
+    id_source:    String(json.data.id_source),
+    id_target:    String(json.data.id_target),
+    relationType: json.data.relationType,
+    weight:       json.data.weight,
+  };
+}
+
+
+
+
+export interface CreateRelationWithPersonsPayload {
+  familyTreeId:    string | number;
+  relationType:    string;
+  source: PersonData;
+  target: PersonData;
+}
+
+/** Shape renvoyée par l’API après création */
+interface CreateLinkResponse {
+  value: string;
+  data: {
+    id:           number | string;
+    id_source:    number | string;
+    id_target:    number | string;
+    relationType: string;
+    weight:       number;
+  };
+}
+
+/**
+ * Crée deux personnes et le lien entre elles.
+ * @param payload CreateRelationWithPersonsPayload
+ * @returns l’ID du lien créé et ses infos
+ */
+export async function createLink(
+  payload: CreateRelationWithPersonsPayload
+): Promise<{
+  id: string;
+  id_source: string;
+  id_target: string;
+  relationType: string;
+  weight: number;
+}> {
+  const body = {
+    familyTreeId: payload.familyTreeId,
+    relationType: payload.relationType,
+    source:       payload.source,
+    target:       payload.target,
+  };
+
+  const res = await fetch(`${BASE_URL}/family-link`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -477,15 +507,11 @@ export async function createLink(
   }
 
   const json: CreateLinkResponse = await res.json();
-  
   return {
-    id: String(json.data.id),
-    id_source: String(json.data.id_source),
-    id_target: String(json.data.id_target),
+    id:           String(json.data.id),
+    id_source:    String(json.data.id_source),
+    id_target:    String(json.data.id_target),
     relationType: json.data.relationType,
-    weight: json.data.weight
+    weight:       json.data.weight,
   };
 }
-
-
-
