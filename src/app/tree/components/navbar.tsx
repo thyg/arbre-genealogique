@@ -32,7 +32,7 @@ const Navbar: React.FC<NavbarProps> = ({ treeId, refreshTree }) => {
   }, [treeId]);
 
   return (
-    <div className="bg-white border-b border-gray-200">
+    <div className="bg-white border-b border-gray-300 p-3">
       <div className="flex items-center justify-between px-4 py-2">
         {/* Left section */}
         <div className="flex items-center">
