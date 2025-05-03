@@ -19,6 +19,16 @@ interface TreeMembersResponse {
   }>;
 }
 
+
+export interface FamilyTree {
+  id:               string;
+  name:             string;
+  creator:          string;
+  description?:     string;
+  geographicOrigin: string;
+}
+
+
 /**
  * Récupère la liste des membres d’un arbre
  */
@@ -191,4 +201,21 @@ export async function createRelation(
   }
   const json: CreateRelationResponse = await res.json();
   return { id: String(json.data.id) };
+}
+
+
+export async function getTree(treeId: string): Promise<FamilyTree> {
+  const res = await fetch(`${BASE_URL}/family-trees/${encodeURIComponent(treeId)}`);
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json = await res.json();
+  // on suppose que json.data contient { id, name, creator, description, geographicOrigin }
+  return {
+    id:               String(json.data.id),
+    name:             json.data.name,
+    creator:          json.data.creator,
+    description:      json.data.description,
+    geographicOrigin: json.data.geographicOrigin,
+  };
 }
