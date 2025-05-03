@@ -1,21 +1,95 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ModifyProfil from './modifyprofil';
-import { Person } from '../types/person';
+import { Person, getPersonById, updatePerson } from '../../lib/api';
 
 interface SidebarProps {
-  selectedPerson: Person | null;
+  selectedPersonId: string | null;
   onPersonUpdate: () => void;
   treeId: number;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeId }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedPersonId, onPersonUpdate, treeId }) => {
   const [activeTab, setActiveTab] = useState('profil');
   const [showModifyProfile, setShowModifyProfile] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch person data when selectedPersonId changes
+  useEffect(() => {
+    if (!selectedPersonId) {
+      setSelectedPerson(null);
+      return;
+    }
+
+    const fetchPersonData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const person = await getPersonById(selectedPersonId);
+        setSelectedPerson(person);
+      } catch (err) {
+        setError('Erreur lors du chargement des données');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPersonData();
+  }, [selectedPersonId]);
 
   // Handle tab selection
   const handleTabClick = (tab: string) => {
     setActiveTab(tab);
   };
+
+  // Handle person update
+  const handlePersonUpdate = async (updatedPerson: Person) => {
+    try {
+      await updatePerson({
+        id: updatedPerson.id,
+        firstName: updatedPerson.firstName,
+        lastName: updatedPerson.lastName,
+        birthDate: updatedPerson.birthDate,
+        birthPlace: updatedPerson.birthPlace,
+        gender: updatedPerson.gender
+      });
+      
+      // Refresh person data
+      const refreshedPerson = await getPersonById(updatedPerson.id);
+      setSelectedPerson(refreshedPerson);
+      
+      // Notify parent component
+      onPersonUpdate();
+      
+      // Close modal
+      setShowModifyProfile(false);
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour du profil:', err);
+      // Handle error (you could show an error message to the user)
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto h-full flex items-center justify-center">
+        <div className="text-center text-gray-500">
+          Chargement...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto h-full flex items-center justify-center">
+        <div className="text-center text-red-500">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   if (!selectedPerson) {
     return (
@@ -28,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeI
   }
 
   // Calculate age based on birth date
-  const calculateAge = (birthDate: string | null) => {
+  const calculateAge = (birthDate: string | undefined) => {
     if (!birthDate) return null;
     
     const today = new Date();
@@ -49,7 +123,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeI
     <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto h-full">
       {/* Profile header */}
       <div className="relative">
-        {selectedPerson.id === 0 ? (
+        {selectedPerson.id === "0" ? (
           <div className="p-4 flex items-center">
             <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -154,21 +228,34 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeI
             
             <h3 className="text-sm font-medium text-gray-700 mb-2">FAMILLE IMMÉDIATE</h3>
             <div className="flex justify-between items-center mb-4">
-              <span className="text-sm text-gray-500">Aucun membre</span>
+              <span className="text-sm text-gray-500">
+                {selectedPerson.outgoingLinks.length === 0 && selectedPerson.incomingLinks.length === 0 
+                  ? "Aucun membre" 
+                  : `${selectedPerson.outgoingLinks.length + selectedPerson.incomingLinks.length} membre(s)`}
+              </span>
               <button className="text-sm text-orange-500">+ Ajouter</button>
             </div>
             
             <h3 className="text-sm font-medium text-gray-700 mb-2">ÉVÉNEMENTS</h3>
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">2004</span>
+                <span className="text-sm font-medium">
+                  {selectedPerson.birthDate ? new Date(selectedPerson.birthDate).getFullYear() : ""}
+                </span>
                 <button className="text-sm text-orange-500">+ Ajouter</button>
               </div>
-              <div className="flex items-center ml-4">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                <span className="text-sm text-gray-700">Naissance</span>
-              </div>
-              <div className="ml-8 text-sm text-gray-500">2004</div>
+              {selectedPerson.birthDate && (
+                <>
+                  <div className="flex items-center ml-4">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                    <span className="text-sm text-gray-700">Naissance</span>
+                  </div>
+                  <div className="ml-8 text-sm text-gray-500">
+                    {new Date(selectedPerson.birthDate).getFullYear()}
+                    {selectedPerson.birthPlace ? ` à ${selectedPerson.birthPlace}` : ''}
+                  </div>
+                </>
+              )}
             </div>
             
             <div className="text-center mt-6">
@@ -181,19 +268,43 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeI
         
         {activeTab === 'modifier' && (
           <div>
-            <p className="text-sm text-gray-600">Options de modification du profil</p>
+            <button 
+              onClick={() => setShowModifyProfile(true)}
+              className="w-full py-2 mb-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
+            >
+              Modifier les informations
+            </button>
+            <p className="text-sm text-gray-600 mt-2">
+              Modifiez les informations de base comme le nom, prénom, date et lieu de naissance, etc.
+            </p>
           </div>
         )}
         
         {activeTab === 'ajouter' && (
           <div>
-            <p className="text-sm text-gray-600">Options d'ajout de relations</p>
+            <button className="w-full py-2 mb-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600">
+              Ajouter un parent
+            </button>
+            <button className="w-full py-2 mb-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600">
+              Ajouter un enfant
+            </button>
+            <button className="w-full py-2 mb-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600">
+              Ajouter un partenaire
+            </button>
+            <p className="text-sm text-gray-600 mt-2">
+              Ajoutez des relations familiales à cette personne.
+            </p>
           </div>
         )}
         
         {activeTab === 'plus' && (
           <div>
-            <p className="text-sm text-gray-600">Options supplémentaires</p>
+            <button className="w-full py-2 mb-2 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">
+              Supprimer cette personne
+            </button>
+            <p className="text-sm text-gray-600 mt-2">
+              Attention: Cette action est irréversible et supprimera toutes les relations associées.
+            </p>
           </div>
         )}
       </div>
@@ -203,7 +314,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedPerson, onPersonUpdate, treeI
         <ModifyProfil 
           person={selectedPerson} 
           onClose={() => setShowModifyProfile(false)} 
-          onUpdate={onPersonUpdate}
+          onUpdate={handlePersonUpdate}
         />
       )}
     </div>

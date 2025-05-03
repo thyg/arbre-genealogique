@@ -386,3 +386,106 @@ export async function getPersonById(id: string): Promise<Person> {
     })),
   };
 }
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////creer un lien ///////////////////////////
+
+/** Payload pour créer un lien entre deux personnes avec informations complètes */
+export interface CreateRelationWithPersonsPayload {
+  familyTreeId: string | number;
+  relationType: string;
+  source: {
+    id?: string;      // Optionnel, si on utilise une personne existante
+    firstName: string;
+    lastName: string;
+    birthDate?: string;
+    birthPlace?: string;
+    gender?: string;
+  };
+  target: {
+    id?: string;      // Optionnel, si on utilise une personne existante
+    firstName: string;
+    lastName: string;
+    birthDate?: string;
+    birthPlace?: string;
+    gender?: string;
+  };
+}
+
+/** Response shape pour la création d'un lien */
+interface CreateLinkResponse {
+  value: string;
+  data: { 
+    id: string;
+    id_source: string;
+    id_target: string;
+    relationType: string;
+    weight: number;
+  };
+}
+
+/**
+ * Crée un lien entre deux personnes, crée également les personnes si elles n'existent pas
+ * Renvoie l'ID du lien créé et les informations associées.
+ */
+export async function createLink(
+  payload: CreateRelationWithPersonsPayload
+): Promise<{ 
+  id: string;
+  id_source: string;
+  id_target: string; 
+  relationType: string;
+  weight: number;
+}> {
+  // Transformation du payload pour le format attendu par l'API
+  const requestPayload = {
+    relationType: payload.relationType,
+    source: payload.source,
+    target: payload.target,
+    familyTreeId: payload.familyTreeId
+  };
+
+  const res = await fetch(`${BASE_URL}/family-link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestPayload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+
+  const json: CreateLinkResponse = await res.json();
+  
+  return {
+    id: String(json.data.id),
+    id_source: String(json.data.id_source),
+    id_target: String(json.data.id_target),
+    relationType: json.data.relationType,
+    weight: json.data.weight
+  };
+}
+
+
+
