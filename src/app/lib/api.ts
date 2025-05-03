@@ -219,3 +219,145 @@ export async function getTree(treeId: string): Promise<FamilyTree> {
     geographicOrigin: json.data.geographicOrigin,
   };
 }
+
+
+
+/** Payload pour mettre à jour une personne existante */
+export interface UpdatePersonPayload {
+  /** L’ID de la personne (sera placé dans l’URL) */
+  id: string;
+  /** Champs modifiables — ne pas oublier d’encoder les dates au format ISO si nécessaire */
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  gender?: string;
+}
+
+/** Shape de la réponse renvoyée par le back pour un update */
+interface UpdatePersonResponse {
+  value: string;
+  data: {
+    id:         number | string;
+    firstName:  string;
+    lastName:   string;
+    birthDate?: string;
+    birthPlace?: string;
+    gender?:    string;
+    // … autres champs renvoyés par votre API …
+  };
+  text?: string;
+}
+
+/**
+ * Met à jour les informations d’une personne existante.
+ * Envoie un PATCH à /api/persons/:id avec le DTO
+ * et renvoie l’ID (et potentiellement les données) de la personne mise à jour.
+ */
+export async function updatePerson(
+  payload: UpdatePersonPayload
+): Promise<{
+  id: string;
+  firstName: string;
+  lastName:  string;
+  birthDate?: string;
+  birthPlace?: string;
+  gender?:    string;
+}> {
+  const { id, ...body } = payload;
+  const res = await fetch(`${BASE_URL}/persons/${encodeURIComponent(id)}`, {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: UpdatePersonResponse = await res.json();
+  return {
+    id:         String(json.data.id),
+    firstName:  json.data.firstName,
+    lastName:   json.data.lastName,
+    birthDate:  json.data.birthDate,
+    birthPlace: json.data.birthPlace,
+    gender:     json.data.gender,
+  };
+}
+
+
+
+/** Un lien sortant/entrant pour une personne */
+export interface PersonLink {
+  id:           string;
+  weight:       number;
+  relationType: string;
+}
+
+/** Représentation d’une personne dans le front */
+export interface Person {
+  id:            string;
+  firstName:     string;
+  lastName:      string;
+  birthDate?:    string;
+  birthPlace?:   string;
+  gender?:       string;
+  outgoingLinks: PersonLink[];
+  incomingLinks: PersonLink[];
+}
+
+/** Shape brute renvoyée par GET /persons/:id */
+interface GetPersonResponse {
+  value: string;
+  data: {
+    id:           number | string;
+    firstName:    string;
+    lastName:     string;
+    birthDate?:   string;
+    birthPlace?:  string;
+    gender?:      string;
+    outgoingLinks: Array<{
+      id:           number | string;
+      weight:       number;
+      relationType: string;
+    }>;
+    incomingLinks: Array<{
+      id:           number | string;
+      weight:       number;
+      relationType: string;
+    }>;
+  };
+  text?: string;
+}
+
+/**
+ * Récupère les détails d’une personne par son ID.
+ */
+export async function getPersonById(id: string): Promise<Person> {
+  const res = await fetch(
+    `${BASE_URL}/persons/${encodeURIComponent(id)}`
+  );
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: GetPersonResponse = await res.json();
+
+  const d = json.data;
+  return {
+    id:            String(d.id),
+    firstName:     d.firstName,
+    lastName:      d.lastName,
+    birthDate:     d.birthDate,
+    birthPlace:    d.birthPlace,
+    gender:        d.gender,
+    outgoingLinks: d.outgoingLinks.map(link => ({
+      id:           String(link.id),
+      weight:       link.weight,
+      relationType: link.relationType,
+    })),
+    incomingLinks: d.incomingLinks.map(link => ({
+      id:           String(link.id),
+      weight:       link.weight,
+      relationType: link.relationType,
+    })),
+  };
+}
