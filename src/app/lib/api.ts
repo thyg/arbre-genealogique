@@ -19,11 +19,21 @@ interface TreeMembersResponse {
   }>;
 }
 
+
+export interface FamilyTree {
+  id:               string;
+  name:             string;
+  creator:          string;
+  description?:     string;
+  geographicOrigin: string;
+}
+
+
 /**
  * Récupère la liste des membres d’un arbre
  */
 export async function getTreeMembers(
-  treeId: number
+  treeId: string
 ): Promise<TreeMember[]> {
   const res = await fetch(`${BASE_URL}/persons/family-tree/${treeId}`);
   if (!res.ok) {
@@ -194,30 +204,18 @@ export async function createRelation(
 }
 
 
-/** Type pour les liens familiaux */
-export interface FamilyLink {
-  id: number;
-  id_source: number;
-  id_target: number;
-  relationType: string;
-}
-
-/** Le format brut renvoyé par GET /family-links/tree/:treeId */
-interface FamilyLinksResponse {
-  value: string;
-  data: FamilyLink[];
-}
-
-/**
- * Récupère tous les liens d'un arbre généalogique
- */
-export async function getFamilyLinks(
-  treeId: string
-): Promise<FamilyLink[]> {
-  const res = await fetch(`${BASE_URL}/family-links/tree/${treeId}`);
+export async function getTree(treeId: string): Promise<FamilyTree> {
+  const res = await fetch(`${BASE_URL}/family-trees/${encodeURIComponent(treeId)}`);
   if (!res.ok) {
     throw new Error(`Erreur ${res.status}: ${res.statusText}`);
   }
-  const json: FamilyLinksResponse = await res.json();
-  return json.data;
+  const json = await res.json();
+  // on suppose que json.data contient { id, name, creator, description, geographicOrigin }
+  return {
+    id:               String(json.data.id),
+    name:             json.data.name,
+    creator:          json.data.creator,
+    description:      json.data.description,
+    geographicOrigin: json.data.geographicOrigin,
+  };
 }
