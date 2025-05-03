@@ -5,10 +5,13 @@ import Navbar from './components/navbar';
 import Sidebar from './components/sidebar';
 import TreeGraph from './components/treegraph';
 import { Person } from './types/person';
+import { number } from 'framer-motion';
 
 export default function FamilyTreePage() {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  const [familyTreeId, setFamilyTreeId] = useState<number>(1); // Default family tree ID
+  //const [familyTreeId, setFamilyTreeId] = useState<number>(1); // Default family tree ID
+  const [familyTreeId, setFamilyTreeId] = useState<number>(0);
+
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);

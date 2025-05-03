@@ -23,7 +23,7 @@ interface TreeMembersResponse {
  * Récupère la liste des membres d’un arbre
  */
 export async function getTreeMembers(
-  treeId: string
+  treeId: number
 ): Promise<TreeMember[]> {
   const res = await fetch(`${BASE_URL}/persons/family-tree/${treeId}`);
   if (!res.ok) {
@@ -191,4 +191,33 @@ export async function createRelation(
   }
   const json: CreateRelationResponse = await res.json();
   return { id: String(json.data.id) };
+}
+
+
+/** Type pour les liens familiaux */
+export interface FamilyLink {
+  id: number;
+  id_source: number;
+  id_target: number;
+  relationType: string;
+}
+
+/** Le format brut renvoyé par GET /family-links/tree/:treeId */
+interface FamilyLinksResponse {
+  value: string;
+  data: FamilyLink[];
+}
+
+/**
+ * Récupère tous les liens d'un arbre généalogique
+ */
+export async function getFamilyLinks(
+  treeId: string
+): Promise<FamilyLink[]> {
+  const res = await fetch(`${BASE_URL}/family-links/tree/${treeId}`);
+  if (!res.ok) {
+    throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+  }
+  const json: FamilyLinksResponse = await res.json();
+  return json.data;
 }
