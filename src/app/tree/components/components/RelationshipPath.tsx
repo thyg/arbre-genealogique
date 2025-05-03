@@ -122,7 +122,7 @@ export function RelationshipPath({ path, totalWeight }: RelationshipPathProps) {
       <div className="mt-6 p-4 bg-blue-50 rounded-lg text-blue-900">
         <h3 className="font-medium mb-2">Explication de la relation :</h3>
         <p className="text-sm">
-          {path[0].fromPerson} {formatRelation(path[0].relationType).toLowerCase()} {path[0].toPerson}
+          {path[0].toPerson} {formatRelation(path[0].relationType).toLowerCase()} {path[0].fromPerson}
           {path.slice(1).map((step, i) => (
             `, qui ${formatRelation(step.relationType).toLowerCase()} ${step.toPerson}`
           ))}

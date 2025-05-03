@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { getTreeMembers, getRelationship } from "../lib/api";
+import { getTreeMembers, getRelationship } from "../../lib/api";
 import { MemberSelect } from "./components/MemberSelect";
 import { RelationshipPath, RelationshipStep } from "./components/RelationshipPath";
 
