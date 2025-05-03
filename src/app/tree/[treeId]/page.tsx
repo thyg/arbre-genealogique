@@ -1,7 +1,7 @@
 // src/app/tree/[treeId]/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams }        from 'next/navigation';
 import Navbar               from '../components/navbar';
 import Sidebar              from '../components/sidebar';
@@ -17,6 +17,47 @@ export default function FamilyTreePage() {
   const [loading, setLoading]               = useState(true);
   const [error, setError]                   = useState<string | null>(null);
 
+  const fetchMembers = useCallback(async () => {
+    if (!treeId) return;
+  
+    setLoading(true);
+    setError(null);
+  
+    try {
+      const res = await fetch(`/api/persons/family-tree/${encodeURIComponent(treeId)}`);
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}: ${res.statusText}`);
+      }
+  
+      // On précise la forme attendue
+      const json = await res.json() as {
+        value: string;
+        data: Person[];
+        text?: string;
+      };
+  
+      if (json.value !== '200') {
+        // json.text peut être undefined
+        throw new Error(json.text ?? 'Erreur API inconnue');
+      }
+  
+      setPersons(json.data);
+      // sélectionne la première personne (ou null si tableau vide)
+      setSelectedPerson(json.data[0] ?? null);
+  
+    } catch (error: unknown) {
+      // on ne présume pas que c'est une Error
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError(String(error));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [treeId]);
+
+  
   useEffect(() => {
     if (!treeId) return; // si pas d'ID on ne fait rien
 
@@ -67,7 +108,10 @@ export default function FamilyTreePage() {
   return (
     <div className="flex flex-col h-screen bg-white">
       {/* 3) on passe treeId et la liste à la Navbar */}
-      <Navbar familyTreeId={Number(treeId)} persons={persons} />
+      <Navbar
+        treeId={treeId!}
+        refreshTree={fetchMembers}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar avec le détail de la personne sélectionnée */}

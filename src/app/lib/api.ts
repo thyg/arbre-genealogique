@@ -19,15 +19,15 @@ interface TreeMembersResponse {
   }>;
 }
 
-
-export interface FamilyTree {
-  id:               string;
-  name:             string;
-  creator:          string;
-  description?:     string;
-  geographicOrigin: string;
+export interface TreeDetails {
+  id:                 string;
+  name:               string;
+  description:        string;
+  creationDate:       string;
+  lastModifiedDate:   string;
+  geographicOrigin:   string;
+  creator:            string;
 }
-
 
 /**
  * Récupère la liste des membres d’un arbre
@@ -204,19 +204,44 @@ export async function createRelation(
 }
 
 
-export async function getTree(treeId: string): Promise<FamilyTree> {
-  const res = await fetch(`${BASE_URL}/family-trees/${encodeURIComponent(treeId)}`);
+/** Shape brute renvoyée par GET /family-trees/:treeId */
+interface GetTreeResponse {
+  value: string;
+  data: {
+    id:                 number | string;
+    name:               string;
+    description:        string;
+    creationDate:       string;
+    lastModifiedDate:   string;
+    geographicOrigin:   string;
+    creator:            string;
+    // on ignore le reste (people, familyLinks, etc.)
+  };
+  text?: string;
+}
+
+
+/**
+ * Récupère les détails « méta » d’un arbre généalogique.
+ */
+
+export async function getTree(treeId: string): Promise<TreeDetails> {
+  const res = await fetch(
+    `${BASE_URL}/family-trees/${encodeURIComponent(treeId)}`
+  );
   if (!res.ok) {
     throw new Error(`Erreur ${res.status}: ${res.statusText}`);
   }
-  const json = await res.json();
-  // on suppose que json.data contient { id, name, creator, description, geographicOrigin }
+  const json: GetTreeResponse = await res.json();
+  const d = json.data;
   return {
-    id:               String(json.data.id),
-    name:             json.data.name,
-    creator:          json.data.creator,
-    description:      json.data.description,
-    geographicOrigin: json.data.geographicOrigin,
+    id:               String(d.id),
+    name:             d.name,
+    description:      d.description,
+    creationDate:     d.creationDate,
+    lastModifiedDate: d.lastModifiedDate,
+    geographicOrigin: d.geographicOrigin,
+    creator:          d.creator,
   };
 }
 
