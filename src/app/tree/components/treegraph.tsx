@@ -32,6 +32,11 @@ export default function TreeGraph({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Calculer la taille à chaque rendu (ou dans un useEffect si nécessaire)
+  const width  = containerRef.current?.clientWidth  ?? 0;
+  const height = containerRef.current?.clientHeight ?? 0;
+
+
   // Récupération du treeId depuis l'URL
   const { treeId } = useParams() as { treeId: string };
 
@@ -78,7 +83,11 @@ export default function TreeGraph({
           aria-label="Rechercher"
           title="Rechercher"
         >🔍</button>
-        <ZoomControl svgRef={svgRef as React.RefObject<SVGSVGElement>} />
+        <ZoomControl 
+         svgRef={svgRef as React.RefObject<SVGSVGElement>}
+         width={width}
+         height={height}
+         />
       </div>
 
       {showSearch && (
