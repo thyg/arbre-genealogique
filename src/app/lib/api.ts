@@ -380,6 +380,10 @@ export async function getPersonById(id: string): Promise<Person> {
 ////////////////////////creer un lien ///////////////////////////
 
 /** Données complètes d’une personne à créer */
+/** Référence à une personne existante */
+export interface PersonRef {
+  id: string | number;
+}
 export interface PersonData {
   firstName:  string;
   lastName:   string;
@@ -456,11 +460,14 @@ export async function createRelation(
 
 
 
+/** Payload fusionné pour créer un lien, avec création éventuelle de personne */
 export interface CreateRelationWithPersonsPayload {
-  familyTreeId:    string | number;
-  relationType:    string;
-  source: PersonData;
-  target: PersonData;
+  familyTreeId: string | number;
+  relationType: string;
+  /** Peut être une nouvelle personne ou une référence existante */
+  source: PersonData | PersonRef;
+  /** Idem pour la cible */
+  target: PersonData | PersonRef;
 }
 
 /** Shape renvoyée par l’API après création */
@@ -475,10 +482,23 @@ interface CreateLinkResponse {
   };
 }
 
+type CreateLinkRequestBody = {
+  familyTreeId: string | number;
+  relationType: string;
+  id_source?:  string | number;
+  id_target?:  string | number;
+  source?:     PersonData;
+  target?:     PersonData;
+};
+
+
 /**
  * Crée deux personnes et le lien entre elles.
  * @param payload CreateRelationWithPersonsPayload
  * @returns l’ID du lien créé et ses infos
+ */
+/**
+ * Crée un lien (et les personnes si besoin) via POST /family-link
  */
 export async function createLink(
   payload: CreateRelationWithPersonsPayload
@@ -489,15 +509,24 @@ export async function createLink(
   relationType: string;
   weight: number;
 }> {
-  const body = {
+  // On construit dynamiquement le body
+  const body: CreateLinkRequestBody = {
     familyTreeId: payload.familyTreeId,
     relationType: payload.relationType,
-    source:       payload.source,
-    target:       payload.target,
   };
+  if ('id' in payload.source) {
+    body.id_source = payload.source.id;
+  } else {
+    body.source = payload.source;
+  }
+  if ('id' in payload.target) {
+    body.id_target = payload.target.id;
+  } else {
+    body.target = payload.target;
+  }
 
   const res = await fetch(`${BASE_URL}/family-link`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
   });
@@ -505,7 +534,6 @@ export async function createLink(
   if (!res.ok) {
     throw new Error(`Erreur ${res.status}: ${res.statusText}`);
   }
-
   const json: CreateLinkResponse = await res.json();
   return {
     id:           String(json.data.id),

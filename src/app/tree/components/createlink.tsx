@@ -1,4 +1,5 @@
 // src/app/tree/components/CreateLinkModal.tsx
+//cette page est utiliser pour creer les liens entre les membres de la famille 
 'use client';
 
 import React, { useState } from 'react';
@@ -8,16 +9,19 @@ import {
   type PersonData,
 } from '../../lib/api';
 import { PersonForm } from './personForm';
-import {Person} from '../types/person';
+import type { MemberOption } from './components/MemberSelect';
+import {Person} from "../types/person"
 export interface CreateLinkModalProps {
   /** L’ID de l’arbre courant */
   familyTreeId: string;
   /** Callback après création réussie */
+  /** Personne déjà sélectionnée en source (optionnelle) */
   sourcePerson?: Person | null;
   onLinkCreated: () => void;
   /** Ferme le modal */
   onClose: () => void;
 }
+
 const relationTypeOptions = [
   { value: 'FATHER',        label: 'Père' },
   { value: 'MOTHER',        label: 'Mère' },
@@ -49,38 +53,49 @@ export default function CreateLinkModal({
   onLinkCreated,
   onClose,
 }: CreateLinkModalProps) {
+  // Type de relation
   const [relationType, setRelationType] = useState<string>('');
-  const [sourceData, setSourceData]     = useState<PersonData>({
-    firstName:  '',
-    lastName:   '',
-    birthDate:  undefined,
-    birthPlace: undefined,
-    gender:     undefined,
+
+  // Source : existant ou nouveau
+  const [useExistingSource, setUseExistingSource] = useState<boolean>(false);
+  const [existingSource, setExistingSource]       = useState<MemberOption | null>(null);
+  const [sourceData, setSourceData]               = useState<PersonData>({
+    firstName: '', lastName: '', birthDate: undefined, birthPlace: undefined, gender: undefined,
   });
-  const [targetData, setTargetData]     = useState<PersonData>({
-    firstName:  '',
-    lastName:   '',
-    birthDate:  undefined,
-    birthPlace: undefined,
-    gender:     undefined,
+
+  // Cible : existant ou nouveau
+  const [useExistingTarget, setUseExistingTarget] = useState<boolean>(false);
+  const [existingTarget, setExistingTarget]       = useState<MemberOption | null>(null);
+  const [targetData, setTargetData]               = useState<PersonData>({
+    firstName: '', lastName: '', birthDate: undefined, birthPlace: undefined, gender: undefined,
   });
-  const [isCreating, setIsCreating]     = useState<boolean>(false);
-  const [error, setError]               = useState<string | null>(null);
+
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [error, setError]           = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // validations minimales
+    // validations
     if (!relationType) {
       setError('Le type de relation est obligatoire');
       return;
     }
-    if (!sourceData.firstName || !sourceData.lastName) {
+    // Si existant, la sélection doit exister
+    if (useExistingSource && !existingSource) {
+      setError('Sélectionnez une personne source existante');
+      return;
+    }
+    if (!useExistingSource && (!sourceData.firstName || !sourceData.lastName)) {
       setError('Prénom et nom de la source sont obligatoires');
       return;
     }
-    if (!targetData.firstName || !targetData.lastName) {
+    if (useExistingTarget && !existingTarget) {
+      setError('Sélectionnez une personne cible existante');
+      return;
+    }
+    if (!useExistingTarget && (!targetData.firstName || !targetData.lastName)) {
       setError('Prénom et nom de la cible sont obligatoires');
       return;
     }
@@ -90,20 +105,26 @@ export default function CreateLinkModal({
       const payload: CreateRelationWithPersonsPayload = {
         familyTreeId: Number(familyTreeId),
         relationType,
-        source:  {
-          firstName: sourceData.firstName,
-          lastName:  sourceData.lastName,
-          ...(sourceData.birthDate  && { birthDate:  sourceData.birthDate  }),
-          ...(sourceData.birthPlace && { birthPlace: sourceData.birthPlace }),
-          ...(sourceData.gender     && { gender:     sourceData.gender     }),
-        },
-        target:  {
-          firstName: targetData.firstName,
-          lastName:  targetData.lastName,
-          ...(targetData.birthDate  && { birthDate:  targetData.birthDate  }),
-          ...(targetData.birthPlace && { birthPlace: targetData.birthPlace }),
-          ...(targetData.gender     && { gender:     targetData.gender     }),
-        },
+
+        // soit on envoie juste { id }, soit on construit l'objet complet
+        source: useExistingSource
+          ? { id: existingSource!.id }
+          : {
+              firstName:  sourceData.firstName,
+              lastName:   sourceData.lastName,
+              ...(sourceData.birthDate  && { birthDate:  sourceData.birthDate  }),
+              ...(sourceData.birthPlace && { birthPlace: sourceData.birthPlace }),
+              ...(sourceData.gender     && { gender:     sourceData.gender     }),
+            },
+        target: useExistingTarget
+          ? { id: existingTarget!.id }
+          : {
+              firstName:  targetData.firstName,
+              lastName:   targetData.lastName,
+              ...(targetData.birthDate  && { birthDate:  targetData.birthDate  }),
+              ...(targetData.birthPlace && { birthPlace: targetData.birthPlace }),
+              ...(targetData.gender     && { gender:     targetData.gender     }),
+            },
       };
 
       await createLink(payload);
@@ -140,12 +161,9 @@ export default function CreateLinkModal({
             </div>
           )}
 
-          {/* Sélection du type de relation */}
+          {/* Type de relation */}
           <div>
-            <label
-              htmlFor="relationType"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="relationType" className="block text-sm font-medium text-gray-700 mb-1">
               Type de relation
             </label>
             <select
@@ -164,23 +182,29 @@ export default function CreateLinkModal({
             </select>
           </div>
 
-          {/* Formulaires pour Source & Cible */}
+          {/* Source & Cible */}
           <div className="grid md:grid-cols-2 gap-6">
             <PersonForm
               title="Personne source"
+              treeId={familyTreeId}
+              useExisting={useExistingSource}
+              onToggleMode={setUseExistingSource}
+              existingValue={existingSource}
+              onExistingChange={setExistingSource}
               data={sourceData}
-              onChange={(field, val) =>
-                setSourceData(prev => ({ ...prev, [field]: val }))
-              }
+              onChange={(f, v) => setSourceData(prev => ({ ...prev, [f]: v }))}
               genderOptions={genderOptions}
             />
 
             <PersonForm
               title="Personne cible"
+              treeId={familyTreeId}
+              useExisting={useExistingTarget}
+              onToggleMode={setUseExistingTarget}
+              existingValue={existingTarget}
+              onExistingChange={setExistingTarget}
               data={targetData}
-              onChange={(field, val) =>
-                setTargetData(prev => ({ ...prev, [field]: val }))
-              }
+              onChange={(f, v) => setTargetData(prev => ({ ...prev, [f]: v }))}
               genderOptions={genderOptions}
             />
           </div>

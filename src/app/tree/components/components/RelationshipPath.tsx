@@ -1,3 +1,5 @@
+//composant pour connaitre les relations entre 2 personnes
+
 "use client";
 
 import React from "react";
