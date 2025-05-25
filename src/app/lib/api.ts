@@ -3,6 +3,8 @@
 // Base URL du proxy Next.js
 const BASE_URL = "/api";
 
+import type { FamilyLink } from "@/app/tree/types/linkTypes"
+
 /** Un membre de l’arbre tel qu’on l’utilise dans le front */
 export interface TreeMember {
   id:       string;
@@ -542,4 +544,41 @@ export async function createLink(
     relationType: json.data.relationType,
     weight:       json.data.weight,
   };
+}
+
+// api.ts
+export type RelationType =
+  | 'FATHER'
+  | 'MOTHER'
+  | 'BROTHER'
+  | 'SISTER'
+  | 'SON'
+  | 'DAUGHTER'
+  | 'UNCLE'
+  | 'AUNT'
+  | 'COUSIN'
+  | 'GRAND_FATHER'
+  | 'GRAND_MOTHER';
+
+
+interface LinksResponse {
+  value: string;          // "200"
+  text:  string;          // "links get successfully"
+  data:  FamilyLink[];
+}
+
+// api.ts (suite)
+export async function getFamilyLinks(treeId: number): Promise<FamilyLink[]> {
+  const res = await fetch(`/api/family-link/family-tree/${treeId}`, {
+    cache: 'no-store',   // pas de cache dans Next 14 app router
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const json = (await res.json()) as LinksResponse;
+
+  if (json.value !== '200') {
+    throw new Error(json.text ?? 'Unknown backend error');
+  }
+  return json.data;
 }
