@@ -1,16 +1,17 @@
-// src/app/tree/components/treegraph.tsx
+// src/app/tree/components/TreeGraph.tsx
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import { useParams } from 'next/navigation';
-import { Person } from '../types/person';
-import { FamilyLink } from '../types/linkTypes';
+import { getTreeMembers, TreeMember } from '@/app/lib/api';
 import ZoomControl from './zoom';
 import DragAndDrop from './glissezdeplacer';
 import CreateLinkModal, { CreateLinkButton } from './createlink';
 import Recherche from './recherche';
-import PersonneComponent from './personnecomponent';
+import PersonNode from './personnecomponent';
+import type { Person } from '../types/person';
+import type { FamilyLink, RelationType } from '../types/linkTypes';
 
 interface TreeGraphProps {
   persons: Person[];
@@ -21,121 +22,188 @@ interface TreeGraphProps {
   onUpdateLink: (link: FamilyLink) => void;
 }
 
-export default function TreeGraph({
-  persons,
-  links,
-  onSelectPerson,
-  onCreateLink,
-  onDeleteLink,
-  onUpdateLink,
-}: TreeGraphProps) {
+type NodeDatum = d3.SimulationNodeDatum & { id: string };
+type LinkDatum = d3.SimulationLinkDatum<NodeDatum> & { type: RelationType };
+
+export default function TreeGraph({ persons, links = [], onSelectPerson, onCreateLink, onDeleteLink, onUpdateLink }: TreeGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Calculer la taille à chaque rendu (ou dans un useEffect si nécessaire)
-  const width  = containerRef.current?.clientWidth  ?? 0;
-  const height = containerRef.current?.clientHeight ?? 0;
-
-
-  // Récupération du treeId depuis l'URL
   const { treeId } = useParams() as { treeId: string };
 
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  const [showCreateLinkModal, setShowCreateLinkModal] = useState(false);
-  const [sourcePersonId, setSourcePersonId] = useState<number | null>(null);
-  const [showFloatingCreateLink, setShowFloatingCreateLink] = useState(false);
+  const [modalSource, setModalSource] = useState<Person | null>(null);
+  const [floatingCreate, setFloatingCreate] = useState(false);
+  const [members, setMembers] = useState<TreeMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [errorMembers, setErrorMembers] = useState<string | null>(null);
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
 
+  const width = containerRef.current?.clientWidth ?? 800;
+  const height = containerRef.current?.clientHeight ?? 600;
+
+  // Chargement des membres
+  useEffect(() => {
+    setLoadingMembers(true);
+    getTreeMembers(treeId)
+      .then(data => setMembers(data))
+      .catch(err => setErrorMembers(err.message))
+      .finally(() => setLoadingMembers(false));
+  }, [treeId]);
+
+  // Simulation D3 et rendu des liens
   useEffect(() => {
     if (!svgRef.current || persons.length === 0) return;
+    
+ console.log('Drawing D3 graph. Persons:', persons, 'Links:', links); // Vérifiez les props ici
 
-    const width = containerRef.current?.clientWidth || 1000;
-    const height = containerRef.current?.clientHeight || 800;
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
 
-    d3.select(svgRef.current).selectAll('*').remove();
-    const svg = d3.select(svgRef.current)
-      .attr('width', width)
-      .attr('height', height);
-    const g = svg.append('g');
+    const d3Nodes: NodeDatum[] = persons.map(p => ({ id: String(p.id) }));
+    const d3Links: LinkDatum[] = links.map(l => ({
+      source: String(l.id_source),
+      target: String(l.id_target),
+      type:   l.relationType,
+    })) as LinkDatum[];
 
-    // ... configuration de la simulation et rendu du graphe (identique à l'existant) ...
+    console.log('d3Links:', d3Links); // **TRÈS IMPORTANT À VÉRIFIER**
 
-    // Zoom
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', event => g.attr('transform', event.transform));
+    // Dessin des liens sous forme de lignes SVG
+    const linkSel = svg.append('g')
+      .attr('class', 'links')
+      .selectAll('line')
+      .data(d3Links)
+      .enter()
+      .append('line')
+      .attr('stroke', '#000')
+      .attr('stroke-width', 10);
+console.log('linkSel enter selection size:', linkSel.size()); // Devrait être > 0 si d3Links a des éléments
 
-    svg.call(zoom);
-    svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.7));
+    // Force simulation
+    const simulation = d3.forceSimulation<NodeDatum>(d3Nodes)
+      // Liens avec distance variable
+      .force('link', d3.forceLink<NodeDatum, LinkDatum>(d3Links)
+        .id(d => d.id)
+        .distance(link => {
+          switch (link.type) {
+            case 'MOTHER':
+            case 'FATHER':   return 200;
+            case 'BROTHER':
+            case 'SISTER':   return 100;
+            case 'UNCLE':
+            case 'AUNT':     return 160;
+            case 'COUSIN':   return 200;
+            default:         return 150;
+          }
+        })
+        .strength(1)
+      )
+      // Puissante répulsion pour espacer
+      .force('charge', d3.forceManyBody().strength(-5000))
+      // Centre
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      // Eviter le chevauchement
+      .force('collide', d3.forceCollide(180))
+      // Maintenir position initiale légèrement
+      .force('x', d3.forceX(width / 2).strength(0.05))
+      .force('y', d3.forceY(height / 2).strength(0.05))
+      .alpha(1)
+      .alphaDecay(0.05)
+      .on('tick', () => {
+        // Mettre à jour la position des liens
+        linkSel
+          .attr('x1', d => (d.source as NodeDatum).x!)
+          .attr('y1', d => (d.source as NodeDatum).y!)
+          .attr('x2', d => (d.target as NodeDatum).x!)
+          .attr('y2', d => (d.target as NodeDatum).y!);
 
+        // On met à jour positions pour PersonNode
+        setPositions(
+          d3Nodes.reduce((acc, node) => {
+            acc[node.id] = { x: node.x!, y: node.y! };
+            return acc;
+          }, {} as Record<string, { x: number; y: number }>)
+        );
+      });
+// ← Ici, on « ré-chauffe » et relance la simulation
+  simulation.alpha(1).restart();
+
+
+    // arrêt simulation
     return () => {
-      // arrêt de la simulation si nécessaire
-    };
-  }, [persons, links, onSelectPerson]);
+  simulation.stop();
+};
+  }, [persons, links, width, height]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative">
-      {/* Contrôles en haut à droite */}
-      <div className="absolute top-10 right-10 z-50 flex space-x-2">
-        <button
-          onClick={() => setShowSearch(v => !v)}
-          className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-md"
-          aria-label="Rechercher"
-          title="Rechercher"
-        >🔍</button>
-        <ZoomControl 
-         svgRef={svgRef as React.RefObject<SVGSVGElement>}
-         width={width}
-         height={height}
-         />
+    <div ref={containerRef} className="relative w-full h-full p-4 bg-gray-50 rounded">
+      {/* Contrôles */}
+      <div className="absolute top-4 right-4 flex space-x-2 z-20">
+        <button onClick={() => setShowSearch(v => !v)} className="p-2 bg-blue-600 text-white rounded-full shadow" aria-label="Rechercher">🔍</button>
+        <ZoomControl svgRef={svgRef as React.RefObject<SVGSVGElement>} width={width} height={height} />
       </div>
 
+      {/* Popup Recherche */}
       {showSearch && (
-        <div className="absolute top-3 right-3 w-150 bg-white shadow-lg rounded-lg z-40">
-          <Recherche
-            treeId={treeId}
-            onClose={() => setShowSearch(false)}
-            refreshTree={() => {/* recharger les données si nécessaire */}}
-          />
+        <div className="absolute top-12 right-4 bg-white p-4 rounded shadow-lg z-30">
+          <Recherche treeId={treeId} onClose={() => setShowSearch(false)} refreshTree={() => {}} />
         </div>
       )}
 
-      {selectedPerson && (
-        <div className="absolute bottom-4 left-4 z-30 bg-white p-4 rounded-lg shadow-lg max-w-md">
-          <PersonneComponent
-            personId={selectedPerson.id}
-            onClose={() => setSelectedPerson(null)}
-          />
-        </div>
-      )}
+      {/* Liste des membres */}
+      <div className="mt-16">
+        {loadingMembers && <p>Charging…</p>}        
+        {errorMembers && <p className="text-red-600">{errorMembers}</p>}
+        {!loadingMembers && !errorMembers && (
+          <ul className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {members.map(m => (
+              <li key={m.id} className="bg-white p-3 rounded shadow text-center">{m.userName}</li>
+            ))}
+          </ul>
+        )}
+      </div>
 
-      {showCreateLinkModal && sourcePersonId !== null && (
+      {/* Vos modals de création de lien */}
+      {modalSource && (
         <CreateLinkModal
           familyTreeId={treeId}
-          sourcePerson={persons.find(p => p.id === sourcePersonId) || null}
-          onLinkCreated={() => {
-            setShowCreateLinkModal(false);
-            onCreateLink(/* récupérer ou rafraichir le lien créé */ {} as FamilyLink);
-          }}
-          onClose={() => {
-            setShowCreateLinkModal(false);
-            setSourcePersonId(null);
-          }}
+          sourcePerson={modalSource}
+          onLinkCreated={link => { setModalSource(null); onCreateLink(link); }}
+          onClose={() => setModalSource(null)}
         />
       )}
-
-      {showFloatingCreateLink && (
+      {floatingCreate && (
         <CreateLinkModal
           familyTreeId={treeId}
           sourcePerson={null}
-          onLinkCreated={() => setShowFloatingCreateLink(false)}
-          onClose={() => setShowFloatingCreateLink(false)}
+          onLinkCreated={link => { setFloatingCreate(false); onCreateLink(link); }}
+          onClose={() => setFloatingCreate(false)}
         />
       )}
+      <CreateLinkButton onClick={() => setFloatingCreate(true)} />
 
-      <CreateLinkButton onClick={() => setShowFloatingCreateLink(true)} />
+     
+      {/* Rendu des PersonNode */}
+      {persons.map(person => {
+        const pos = positions[String(person.id)] || { x: width/2, y: height/2 };
+        return (
+          <PersonNode
+            key={person.id}
+            person={person}
+            x={pos.x}
+            y={pos.y}
+            highlighted={false}
+            onClick={() => onSelectPerson(person.id)}
+            onContextMenu={() => setModalSource(person)}
+          />
+        );
+      })}
 
-      <svg ref={svgRef} className="w-full h-full" />
+ {/* SVG pour les liens */}
+      <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+
+      {/* Drag & Drop helper */}
       <DragAndDrop svgRef={svgRef as React.RefObject<SVGSVGElement>} />
     </div>
   );

@@ -1,145 +1,122 @@
-import React, { useState, useEffect } from 'react';
-import { Person } from '../types/person';
+// src/app/tree/components/PersonNode.tsx
+'use client';
 
-interface PersonneComponentProps {
-  personId: number;
+import React from 'react';
+import type { Person, FamilyLink } from '../types/person';
+
+export interface PersonNodeProps {
+  /** Données de la personne (déjà chargées en amont) */
+  person: Person;
+  /** Si on veut surligner ce noeud (chemin, sélection…) */
+  highlighted?: boolean;
+  /** Clic gauche sur le noeud */
+  onClick?: (person: Person) => void;
+  /** Clic droit (context menu) sur le noeud */
+  onContextMenu?: (person: Person) => void;
+  /** (Optionnel) position x/y pour un rendu React + <foreignObject> si vous préférez */
+  x?: number;
+  y?: number;
 }
 
-const PersonneComponent: React.FC<PersonneComponentProps> = ({ personId }) => {
-  const [person, setPerson] = useState<Person | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Calcule l'âge à partir d'une date ISO.
+ */
+function computeAge(birthDate?: string): number | null {
+  if (!birthDate) return null;
+  const bd = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - bd.getFullYear();
+  const m = now.getMonth() - bd.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < bd.getDate())) age--;
+  return age;
+}
 
-  useEffect(() => {
-    const fetchPerson = async () => {
-      if (!personId) return;
-      
-      setLoading(true);
-      setError(null);
+export default function PersonNode({
+  person,
+  highlighted = false,
+  onClick,
+  onContextMenu,
+  x,
+  y,
+}: PersonNodeProps) {
+  const age = computeAge(person.birthDate);
+  const strokeColor = highlighted ? '#fbbf24' : (person.gender === 'MALE' ? '#93c5fd' : '#f9a8d4');
 
-      try {
-        const response = await fetch(`http://localhost:8030/api/persons/${personId}`);
-        
-        if (!response.ok) {
-          throw new Error(`Error: ${response.status}`);
-        }
-
-        const result = await response.json();
-        setPerson(result.data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Une erreur est survenue');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPerson();
-  }, [personId]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-4">
-        <p className="text-gray-500">Chargement...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-4">
-        <p className="text-red-600">Erreur: {error}</p>
-      </div>
-    );
-  }
-
-  if (!person) {
-    return (
-      <div className="p-4">
-        <p className="text-gray-500">Aucune personne sélectionnée</p>
-      </div>
-    );
-  }
-
-  // Calculate age from birthDate
-  const calculateAge = (birthDate: string | null) => {
-    if (!birthDate) return null;
-    
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    
-    return age;
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick?.(person);
+  };
+  const handleContext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onContextMenu?.(person);
   };
 
-  const age = calculateAge(person.birthDate);
+  // Si on utilise D3 + direct DOM, on ignorera x/y et on appellera ce composant dans un <foreignObject>.
+  // Ici on fait un rendu React "absolu" si x/y sont fournis.
+  const style: React.CSSProperties = (typeof x === 'number' && typeof y === 'number')
+    ? { position: 'absolute', left: x, top: y, transform: 'translate(-50%, -50%)' }
+    : {};
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow">
-      <div className="flex items-center mb-4">
-        <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-500">
-          {person.gender === 'MALE' ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          ) : (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          )}
-        </div>
-        <div className="ml-4">
-          <h3 className="text-lg font-medium text-gray-800">
-            {person.firstName} {person.lastName}
-          </h3>
-          {age !== null && (
-            <p className="text-sm text-gray-500">
-              {age} ans
-            </p>
-          )}
-        </div>
+    <div
+      className={`p-2 bg-white rounded-lg shadow-md text-center`}
+      style={style}
+      onClick={handleClick}
+      onContextMenu={handleContext}
+      role="button"
+      aria-label={`Personne ${person.firstName} ${person.lastName}`}
+    >
+      {/* Cercle + avatar */}
+      <div
+        className="mx-auto rounded-full flex items-center justify-center mb-2"
+        style={{
+          width: 60, height: 60,
+          border: `3px solid ${strokeColor}`,
+          background: highlighted ? '#fffbeb' : '#fff'
+        }}
+      >
+        {person.gender === 'MALE' ? '👨' : '👩'}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 text-sm">
+      {/* Nom et âge */}
+      <h4 className="text-sm font-semibold text-gray-800">
+        {person.firstName} {person.lastName}
+      </h4>
+      {age != null && (
+        <p className="text-xs text-gray-500">{age} ans</p>
+      )}
+
+      {/* Détails facultatifs */}
+      <div className="mt-1 text-xs text-gray-600 space-y-1">
         {person.birthDate && (
           <div>
-            <p className="font-medium text-gray-700">Date de naissance</p>
-            <p className="text-gray-600">{new Date(person.birthDate).toLocaleDateString()}</p>
+            <span className="font-medium">Né·e :</span>{' '}
+            {new Date(person.birthDate).toLocaleDateString()}
           </div>
         )}
-
         {person.birthPlace && (
           <div>
-            <p className="font-medium text-gray-700">Lieu de naissance</p>
-            <p className="text-gray-600">{person.birthPlace}</p>
+            <span className="font-medium">Lieu :</span>{' '}
+            {person.birthPlace}
           </div>
         )}
-
-        <div>
-          <p className="font-medium text-gray-700">Genre</p>
-          <p className="text-gray-600">{person.gender === 'MALE' ? 'Homme' : 'Femme'}</p>
-        </div>
       </div>
 
+      {/* Relations sortantes */}
       {person.outgoingLinks && person.outgoingLinks.length > 0 && (
-        <div className="mt-4">
-          <h4 className="font-medium text-gray-700 mb-2">Relations</h4>
-          <ul className="space-y-1">
-            {person.outgoingLinks.map((link) => (
-              <li key={link.id} className="text-sm text-gray-600 flex items-center">
-                <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                {link.relationType}: {link.targetFirstName} {link.targetLastName}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+  <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
+    {person.outgoingLinks.map(link => {
+      const target = link.target!;
+      return (
+        <li key={link.id} className="flex items-center justify-center">
+          <span className="inline-block w-1 h-1 bg-blue-500 rounded-full mr-1" />
+          <strong className="uppercase">{link.relationType.toLowerCase()}</strong> :{' '}
+          {target.firstName} {target.lastName}
+        </li>
+      );
+    })}
+  </ul>
+)}
     </div>
   );
-};
-
-export default PersonneComponent;
+}
